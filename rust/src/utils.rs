@@ -23,6 +23,15 @@ pub fn compute_md5_hash(content: &str) -> String {
     format!("{:x}", md5::compute(content.as_bytes()))
 }
 
+/// Parses an RFC3339 timestamp (with `Z` or an explicit offset, as the
+/// claude.ai API returns) into UTC. Single parser shared by the sync engine,
+/// the session CLI, and config expiry handling.
+pub fn parse_rfc3339_utc(s: &str) -> Option<chrono::DateTime<chrono::Utc>> {
+    chrono::DateTime::parse_from_rfc3339(s.trim())
+        .ok()
+        .map(|dt| dt.with_timezone(&chrono::Utc))
+}
+
 /// Loads .gitignore-style patterns from a file into a matcher.
 fn load_ignore_file(base_path: &Path, name: &str) -> Option<Gitignore> {
     let path = base_path.join(name);
@@ -328,6 +337,14 @@ mod tests {
             normalize_and_calculate_md5(unix),
             normalize_and_calculate_md5(old_mac)
         );
+    }
+
+    #[test]
+    fn parses_rfc3339_with_z_and_offsets() {
+        assert!(parse_rfc3339_utc("2024-01-01T00:00:00Z").is_some());
+        let with_offset = parse_rfc3339_utc("2024-01-01T05:30:00+05:30").unwrap();
+        assert_eq!(with_offset.to_rfc3339(), "2024-01-01T00:00:00+00:00");
+        assert!(parse_rfc3339_utc("not a date").is_none());
     }
 
     #[test]

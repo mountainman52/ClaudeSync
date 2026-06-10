@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -10,7 +10,7 @@ use crate::compression::{compress_content, decompress_content};
 use crate::config::FileConfig;
 use crate::error::{CsError, Result};
 use crate::provider::{ClaudeProvider, RemoteFile};
-use crate::utils::compute_md5_hash;
+use crate::utils::{compute_md5_hash, parse_rfc3339_utc};
 
 /// Retries an operation up to 3 times when it fails with a 403 (port of the
 /// `retry_on_403` decorator).
@@ -106,9 +106,15 @@ impl SyncManager {
             remote_files.iter().map(|rf| rf.file_name.clone()).collect();
         let mut synced_files: HashSet<String> = HashSet::new();
 
+        // First-match map over remote names (mirrors the Python next() semantics)
+        let mut remote_by_name: HashMap<&str, &RemoteFile> = HashMap::new();
+        for rf in remote_files {
+            remote_by_name.entry(rf.file_name.as_str()).or_insert(rf);
+        }
+
         let pb = progress_bar(local_files.len() as u64, "Local → Remote");
         for (local_file, local_checksum) in local_files {
-            let remote_file = remote_files.iter().find(|rf| &rf.file_name == local_file);
+            let remote_file = remote_by_name.get(local_file.as_str()).copied();
             match remote_file {
                 Some(rf) => self.update_existing_file(
                     provider,
@@ -213,27 +219,30 @@ impl SyncManager {
 
     fn unpack_files(&self, packed_content: &str) -> Result<()> {
         let mut current_file: Option<String> = None;
-        let mut current_content = String::new();
+        let mut current_lines: Vec<&str> = Vec::new();
 
         for line in packed_content.lines() {
             if let Some(rest) = line.strip_prefix("--- BEGIN FILE:") {
                 if let Some(file) = current_file.take() {
-                    self.write_file(&file, &current_content)?;
-                    current_content.clear();
+                    self.write_file(&file, &current_lines.join("\n"))?;
+                    current_lines.clear();
                 }
                 current_file = Some(rest.trim().trim_end_matches(" ---").trim().to_string());
             } else if line.starts_with("--- END FILE:") {
                 if let Some(file) = current_file.take() {
-                    self.write_file(&file, &current_content)?;
-                    current_content.clear();
+                    // pack_files appends exactly one '\n' before the END
+                    // marker; joining lines on '\n' (instead of appending a
+                    // newline per line, as the Python version did) drops
+                    // exactly that, so content roundtrips byte-for-byte.
+                    self.write_file(&file, &current_lines.join("\n"))?;
+                    current_lines.clear();
                 }
             } else {
-                current_content.push_str(line);
-                current_content.push('\n');
+                current_lines.push(line);
             }
         }
         if let Some(file) = current_file {
-            self.write_file(&file, &current_content)?;
+            self.write_file(&file, &current_lines.join("\n"))?;
         }
         Ok(())
     }
@@ -259,20 +268,24 @@ impl SyncManager {
         let remote_checksum = compute_md5_hash(&remote_file.content);
         if local_checksum != remote_checksum {
             log::debug!("Updating {local_file} on remote...");
+            let content = fs::read_to_string(self.local_path.join(local_file))?;
+            // Retry each request individually: retrying a compound
+            // delete+upload would re-delete an already-deleted file and
+            // abort the retry loop with a non-403 error.
             retry_on_403(|| {
                 provider.delete_file(
                     &self.active_organization_id,
                     &self.active_project_id,
                     &remote_file.uuid,
-                )?;
-                let content = fs::read_to_string(self.local_path.join(local_file))?;
+                )
+            })?;
+            retry_on_403(|| {
                 provider.upload_file(
                     &self.active_organization_id,
                     &self.active_project_id,
                     local_file,
                     &content,
-                )?;
-                Ok(())
+                )
             })?;
             self.sleep_upload_delay();
             synced_files.insert(local_file.to_string());
@@ -312,7 +325,7 @@ impl SyncManager {
             if synced_files.contains(&remote_file.file_name) {
                 let local_file_path = self.local_path.join(&remote_file.file_name);
                 if local_file_path.exists() {
-                    if let Some(ts) = parse_remote_timestamp(&remote_file.created_at) {
+                    if let Some(ts) = parse_rfc3339_utc(&remote_file.created_at) {
                         let ft = filetime::FileTime::from_unix_time(ts.timestamp(), 0);
                         filetime::set_file_times(&local_file_path, ft, ft)?;
                         log::debug!(
@@ -336,7 +349,7 @@ impl SyncManager {
         if local_file_path.exists() {
             // Update only if remote is newer than the local mtime
             let local_mtime: DateTime<Utc> = fs::metadata(&local_file_path)?.modified()?.into();
-            let remote_mtime = parse_remote_timestamp(&remote_file.created_at)
+            let remote_mtime = parse_rfc3339_utc(&remote_file.created_at)
                 .ok_or_else(|| CsError::Other("Invalid remote timestamp".into()))?;
             if remote_mtime > local_mtime {
                 log::debug!("Updating local file {} from remote...", remote_file.file_name);
@@ -366,12 +379,13 @@ impl SyncManager {
             log::info!("Remote pruning is not enabled.");
             return Ok(());
         }
+        let mut remote_by_name: HashMap<&str, &RemoteFile> = HashMap::new();
+        for rf in remote_files {
+            remote_by_name.entry(rf.file_name.as_str()).or_insert(rf);
+        }
         for file_to_delete in remote_files_to_delete {
             log::debug!("Deleting {file_to_delete} from remote...");
-            if let Some(remote_file) = remote_files
-                .iter()
-                .find(|rf| &rf.file_name == file_to_delete)
-            {
+            if let Some(remote_file) = remote_by_name.get(file_to_delete.as_str()).copied() {
                 retry_on_403(|| {
                     provider.delete_file(
                         &self.active_organization_id,
@@ -393,10 +407,47 @@ impl SyncManager {
     }
 }
 
-/// Parses remote ISO timestamps like `2024-01-01T00:00:00Z`.
-fn parse_remote_timestamp(s: &str) -> Option<DateTime<Utc>> {
-    let normalized = s.replace('Z', "+00:00");
-    DateTime::parse_from_rfc3339(&normalized)
-        .ok()
-        .map(|dt| dt.with_timezone(&Utc))
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn manager(local_path: &std::path::Path) -> SyncManager {
+        SyncManager {
+            active_organization_id: "org".into(),
+            active_project_id: "proj".into(),
+            local_path: local_path.to_path_buf(),
+            upload_delay: 0.0,
+            two_way_sync: false,
+            prune_remote_files: false,
+            compression_algorithm: "none".into(),
+        }
+    }
+
+    #[test]
+    fn pack_unpack_roundtrips_content_exactly() {
+        let src = tempfile::tempdir().unwrap();
+        let dst = tempfile::tempdir().unwrap();
+        let cases: &[(&str, &str)] = &[
+            ("no_newline.txt", "a\nb"),
+            ("trailing.txt", "a\nb\n"),
+            ("blank_end.txt", "a\n\n"),
+            ("empty.txt", ""),
+            ("nested/dir/file.txt", "nested content\n"),
+        ];
+        let mut files = BTreeMap::new();
+        for (name, content) in cases {
+            let path = src.path().join(name);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(&path, content).unwrap();
+            files.insert(name.to_string(), compute_md5_hash(content));
+        }
+
+        let packed = manager(src.path()).pack_files(&files).unwrap();
+        manager(dst.path()).unpack_files(&packed).unwrap();
+
+        for (name, content) in cases {
+            let roundtripped = fs::read_to_string(dst.path().join(name)).unwrap();
+            assert_eq!(&roundtripped, content, "roundtrip mismatch for {name}");
+        }
+    }
 }

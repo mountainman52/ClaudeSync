@@ -66,6 +66,22 @@ cargo install --path rust
 
 ### Intentional differences
 
+Fixes for upstream flaws (deliberate divergences from the Python behavior):
+
+- **Granular 403 retries during sync.** Python retried the compound
+  delete+upload of a changed file as one unit, so a 403 on the upload caused
+  the retry to re-delete an already-deleted file and abort, leaving the file
+  missing remotely. The Rust port retries each API request individually.
+- **Session key expiry is compared in UTC.** Python stored expiry as naive
+  UTC but compared it against naive *local* time, skewing expiry by the
+  user's UTC offset (up to ±14 hours). The Rust port compares in UTC.
+- **Packed-file unpacking is byte-exact.** Python's unpack appended a newline
+  to every content line, so compressed two-way sync added a trailing newline
+  to files lacking one (and a blank line to files ending with one). The Rust
+  roundtrip preserves content exactly (covered by a unit test).
+
+Other differences:
+
 - `claudesync schedule` installs the cron entry to run `claudesync push`
   (the Python version wrote `claudesync sync`, a command that does not exist).
 - `claudesync upgrade` prints upgrade instructions instead of self-upgrading

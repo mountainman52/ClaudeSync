@@ -3,7 +3,7 @@ use std::path::Path;
 
 use serde_json::Value;
 
-use crate::cli::{confirm, prompt_string, prompt_usize};
+use crate::cli::{confirm, prompt_index, prompt_string};
 use crate::config::FileConfig;
 use crate::error::{CsError, Result};
 use crate::provider::{get_provider, ClaudeProvider, Project};
@@ -147,20 +147,19 @@ pub fn archive(config: &FileConfig, archive_all: bool, yes: bool) -> Result<()> 
     for (idx, project) in projects.iter().enumerate() {
         println!("  {}. {} (ID: {})", idx + 1, project.name, project.id);
     }
-    let selection = prompt_usize("Enter the number of the project to archive", None)?;
-    if selection >= 1 && selection <= projects.len() {
-        let selected = &projects[selection - 1];
-        if yes
-            || confirm(&format!(
-                "Are you sure you want to archive the project '{}'? Archived projects cannot be modified but can still be viewed.",
-                selected.name
-            ))?
-        {
-            provider.archive_project(&org_id, &selected.id)?;
-            println!("Project '{}' has been archived.", selected.name);
-        }
-    } else {
-        println!("Invalid selection. Please try again.");
+    let Some(idx) = prompt_index("Enter the number of the project to archive", projects.len(), None)?
+    else {
+        return Ok(());
+    };
+    let selected = &projects[idx];
+    if yes
+        || confirm(&format!(
+            "Are you sure you want to archive the project '{}'? Archived projects cannot be modified but can still be viewed.",
+            selected.name
+        ))?
+    {
+        provider.archive_project(&org_id, &selected.id)?;
+        println!("Project '{}' has been archived.", selected.name);
     }
     Ok(())
 }
@@ -259,12 +258,9 @@ pub fn set(
             project_type
         );
     }
-    let selection = prompt_usize("Enter the number of the project to select", Some(1))?;
-    if selection >= 1 && selection <= selectable.len() {
-        let project = selectable[selection - 1].clone();
+    if let Some(idx) = prompt_index("Enter the number of the project to select", selectable.len(), Some(1))? {
+        let project = selectable[idx].clone();
         save_project_selection(config, &project)?;
-    } else {
-        println!("Invalid selection. Please try again.");
     }
     Ok(())
 }
@@ -346,23 +342,22 @@ pub fn truncate(
             status
         );
     }
-    let selection = prompt_usize("Enter the number of the project to truncate", None)?;
-    if selection >= 1 && selection <= projects.len() {
-        let selected = &projects[selection - 1];
-        if yes
-            || confirm(&format!(
-                "Are you sure you want to delete ALL files from project '{}'?",
-                selected.name
-            ))?
-        {
-            delete_files_from_project(&provider, &org_id, &selected.id, &selected.name)?;
-            println!(
-                "All files have been deleted from project '{}'.",
-                selected.name
-            );
-        }
-    } else {
-        println!("Invalid selection. Please try again.");
+    let Some(idx) = prompt_index("Enter the number of the project to truncate", projects.len(), None)?
+    else {
+        return Ok(());
+    };
+    let selected = &projects[idx];
+    if yes
+        || confirm(&format!(
+            "Are you sure you want to delete ALL files from project '{}'?",
+            selected.name
+        ))?
+    {
+        delete_files_from_project(&provider, &org_id, &selected.id, &selected.name)?;
+        println!(
+            "All files have been deleted from project '{}'.",
+            selected.name
+        );
     }
     Ok(())
 }

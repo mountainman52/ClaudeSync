@@ -1,6 +1,6 @@
 use serde_json::Value;
 
-use crate::cli::prompt_usize;
+use crate::cli::prompt_index;
 use crate::config::FileConfig;
 use crate::error::Result;
 use crate::utils::validate_and_get_provider;
@@ -53,20 +53,18 @@ pub fn set(config: &mut FileConfig, org_id: Option<String>, provider_name: &str)
         for (idx, org) in organizations.iter().enumerate() {
             println!("  {}. {} (ID: {})", idx + 1, org.name, org.id);
         }
-        let selection = prompt_usize(
+        if let Some(idx) = prompt_index(
             "Enter the number of the organization you want to work with",
+            organizations.len(),
             Some(1),
-        )?;
-        if selection >= 1 && selection <= organizations.len() {
-            let org = &organizations[selection - 1];
+        )? {
+            let org = &organizations[idx];
             config.set(
                 "active_organization_id",
                 Value::String(org.id.clone()),
                 true,
             )?;
             println!("Selected organization: {} (ID: {})", org.name, org.id);
-        } else {
-            println!("Invalid selection. Please try again.");
         }
     }
 

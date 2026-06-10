@@ -1,18 +1,26 @@
 use regex::Regex;
 use serde_json::Value;
 
-use crate::cli::{confirm, prompt_string, prompt_usize};
+use crate::cli::{confirm, prompt_index, prompt_string, prompt_usize};
 use crate::config::FileConfig;
 use crate::error::Result;
-use crate::utils::validate_and_get_provider;
+use crate::utils::{parse_rfc3339_utc, validate_and_get_provider};
 
 fn format_timestamp(value: Option<&str>) -> String {
     let raw = value.unwrap_or("N/A");
-    let normalized = raw.replace('Z', "+00:00");
-    match chrono::DateTime::parse_from_rfc3339(&normalized) {
-        Ok(dt) => dt.format("%Y-%m-%d %H:%M:%S").to_string(),
-        Err(_) => raw.to_string(),
+    match parse_rfc3339_utc(raw) {
+        Some(dt) => dt.format("%Y-%m-%d %H:%M:%S").to_string(),
+        None => raw.to_string(),
     }
+}
+
+/// Extracts (owner_login, repo_name) from a repos-list element as returned
+/// by `get_code_repos`.
+fn repo_owner_name(repo_data: &Value) -> Option<(String, String)> {
+    let repo = repo_data.get("repo")?;
+    let owner = repo.get("owner")?.get("login")?.as_str()?;
+    let name = repo.get("name")?.as_str()?;
+    Some((owner.to_string(), name.to_string()))
 }
 
 fn capitalize(s: &str) -> String {
@@ -191,26 +199,25 @@ pub fn archive(config: &FileConfig, archive_all: bool, yes: bool) -> Result<()> 
             sess.get("id").and_then(Value::as_str).unwrap_or("N/A")
         );
     }
-    let selection = prompt_usize("Enter the number of the session to archive", None)?;
-    if selection >= 1 && selection <= sessions.len() {
-        let selected = &sessions[selection - 1];
-        let title = selected
-            .get("title")
-            .and_then(Value::as_str)
-            .unwrap_or("Untitled");
-        if yes
-            || confirm(&format!(
-                "Are you sure you want to archive the session '{title}'? Archived sessions cannot be modified but can still be viewed."
-            ))?
-        {
-            let session_id = selected.get("id").and_then(Value::as_str).unwrap_or_default();
-            match provider.archive_session(&org_id, session_id) {
-                Ok(_) => println!("Session '{title}' has been archived."),
-                Err(e) => println!("Failed to archive session '{title}': {e}"),
-            }
+    let Some(idx) = prompt_index("Enter the number of the session to archive", sessions.len(), None)?
+    else {
+        return Ok(());
+    };
+    let selected = &sessions[idx];
+    let title = selected
+        .get("title")
+        .and_then(Value::as_str)
+        .unwrap_or("Untitled");
+    if yes
+        || confirm(&format!(
+            "Are you sure you want to archive the session '{title}'? Archived sessions cannot be modified but can still be viewed."
+        ))?
+    {
+        let session_id = selected.get("id").and_then(Value::as_str).unwrap_or_default();
+        match provider.archive_session(&org_id, session_id) {
+            Ok(_) => println!("Session '{title}' has been archived."),
+            Err(e) => println!("Failed to archive session '{title}': {e}"),
         }
-    } else {
-        println!("Invalid selection. Please try again.");
     }
     Ok(())
 }
@@ -309,15 +316,11 @@ pub fn branch_ls(config: &FileConfig, json_output: bool, search: Option<String>)
 
     println!("Found {} repository(ies):", repos.len());
     for (idx, repo_data) in repos.iter().enumerate() {
-        let repo = repo_data.get("repo").cloned().unwrap_or(Value::Null);
-        let name = repo.get("name").and_then(Value::as_str).unwrap_or("Unknown");
-        let owner = repo
-            .get("owner")
-            .and_then(|o| o.get("login"))
-            .and_then(Value::as_str)
-            .unwrap_or("Unknown");
-        let default_branch = repo
-            .get("default_branch")
+        let (owner, name) = repo_owner_name(repo_data)
+            .unwrap_or_else(|| ("Unknown".to_string(), "Unknown".to_string()));
+        let default_branch = repo_data
+            .get("repo")
+            .and_then(|r| r.get("default_branch"))
             .and_then(Value::as_str)
             .unwrap_or("N/A");
         println!("\n{}. {owner}/{name}", idx + 1);
@@ -396,12 +399,11 @@ pub fn create(
                     env.get("environment_id").and_then(Value::as_str).unwrap_or("N/A"),
                 );
             }
-            let selection = prompt_usize("Select an environment number", Some(1))?;
-            if selection < 1 || selection > environments.len() {
-                println!("Invalid selection.");
+            let Some(env_idx) = prompt_index("Select an environment number", environments.len(), Some(1))?
+            else {
                 return Ok(());
-            }
-            let env = &environments[selection - 1];
+            };
+            let env = &environments[env_idx];
             if !json_output {
                 println!(
                     "Using environment: {}",
@@ -419,64 +421,48 @@ pub fn create(
     let local_repo = detect_local_git_repo();
     let mut git_repo_owner: Option<String> = None;
     let mut git_repo_name: Option<String> = None;
-    let mut repos: Vec<Value> = Vec::new();
+
+    // One fetch serves both the local-repo verification and the fallback
+    // interactive selection below.
+    let repos: Vec<Value> = if local_repo.is_some() || !json_output {
+        provider
+            .get_code_repos(&org_id, true)
+            .ok()
+            .and_then(|d| d.get("repos").and_then(Value::as_array).cloned())
+            .unwrap_or_default()
+    } else {
+        Vec::new()
+    };
 
     if let Some((local_owner, local_name)) = &local_repo {
-        if let Ok(repos_data) = provider.get_code_repos(&org_id, true) {
-            repos = repos_data
-                .get("repos")
-                .and_then(Value::as_array)
-                .cloned()
-                .unwrap_or_default();
-            for repo_data in &repos {
-                let repo = repo_data.get("repo").cloned().unwrap_or(Value::Null);
-                let owner = repo
-                    .get("owner")
-                    .and_then(|o| o.get("login"))
-                    .and_then(Value::as_str);
-                let name = repo.get("name").and_then(Value::as_str);
-                if owner == Some(local_owner.as_str()) && name == Some(local_name.as_str()) {
-                    git_repo_owner = Some(local_owner.clone());
-                    git_repo_name = Some(local_name.clone());
+        for repo_data in &repos {
+            if let Some((owner, name)) = repo_owner_name(repo_data) {
+                if &owner == local_owner && &name == local_name {
                     if !json_output {
-                        println!("Using detected repository: {local_owner}/{local_name}");
+                        println!("Using detected repository: {owner}/{name}");
                     }
+                    git_repo_owner = Some(owner);
+                    git_repo_name = Some(name);
                     break;
                 }
             }
-            if git_repo_owner.is_none() && !json_output {
-                println!(
-                    "\nDetected local repository {local_owner}/{local_name}, but it's not connected to Claude Code."
-                );
-                println!("You need to connect this repository via GitHub OAuth first.");
-                println!("Available repositories:");
-            }
+        }
+        if git_repo_owner.is_none() && !json_output {
+            println!(
+                "\nDetected local repository {local_owner}/{local_name}, but it's not connected to Claude Code."
+            );
+            println!("You need to connect this repository via GitHub OAuth first.");
+            println!("Available repositories:");
         }
     }
 
     // No connected repo found: let the user choose one (or skip)
     if git_repo_owner.is_none() && !json_output {
-        if repos.is_empty() {
-            if let Ok(repos_data) = provider.get_code_repos(&org_id, true) {
-                repos = repos_data
-                    .get("repos")
-                    .and_then(Value::as_array)
-                    .cloned()
-                    .unwrap_or_default();
-            }
-        }
         if !repos.is_empty() {
             for (idx, repo_data) in repos.iter().enumerate() {
-                let repo = repo_data.get("repo").cloned().unwrap_or(Value::Null);
-                println!(
-                    "  {}. {}/{}",
-                    idx + 1,
-                    repo.get("owner")
-                        .and_then(|o| o.get("login"))
-                        .and_then(Value::as_str)
-                        .unwrap_or("Unknown"),
-                    repo.get("name").and_then(Value::as_str).unwrap_or("Unknown"),
-                );
+                let (owner, name) = repo_owner_name(repo_data)
+                    .unwrap_or_else(|| ("Unknown".to_string(), "Unknown".to_string()));
+                println!("  {}. {owner}/{name}", idx + 1);
             }
             println!(
                 "  {}. Skip (create session without repository)",
@@ -484,17 +470,7 @@ pub fn create(
             );
             let selection = prompt_usize("Select a repository number", Some(repos.len() + 1))?;
             if selection >= 1 && selection <= repos.len() {
-                let repo = repos[selection - 1].get("repo").cloned().unwrap_or(Value::Null);
-                let owner = repo
-                    .get("owner")
-                    .and_then(|o| o.get("login"))
-                    .and_then(Value::as_str)
-                    .map(|s| s.to_string());
-                let name = repo
-                    .get("name")
-                    .and_then(Value::as_str)
-                    .map(|s| s.to_string());
-                if let (Some(owner), Some(name)) = (owner, name) {
+                if let Some((owner, name)) = repo_owner_name(&repos[selection - 1]) {
                     println!("Using repository: {owner}/{name}");
                     git_repo_owner = Some(owner);
                     git_repo_name = Some(name);

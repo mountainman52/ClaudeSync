@@ -1,7 +1,7 @@
 use serde_json::Value;
 
 use crate::chat_sync::sync_chats;
-use crate::cli::{confirm, prompt_string, prompt_usize};
+use crate::cli::{confirm, prompt_index, prompt_string};
 use crate::config::FileConfig;
 use crate::error::Result;
 use crate::provider::ClaudeProvider;
@@ -349,10 +349,8 @@ fn select_project(
         if let Some(d) = default_project {
             prompt += &format!(" (default: {} - {})", d + 1, filtered[d].name);
         }
-        let selection = prompt_usize(&prompt, default_project.map(|d| d + 1))?;
-        if selection >= 1 && selection <= filtered.len() {
-            return Ok(Some(filtered[selection - 1].id.clone()));
+        if let Some(idx) = prompt_index(&prompt, filtered.len(), default_project.map(|d| d + 1))? {
+            return Ok(Some(filtered[idx].id.clone()));
         }
-        println!("Invalid selection. Please try again.");
     }
 }

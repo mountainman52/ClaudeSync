@@ -291,7 +291,10 @@ impl FileConfig {
 
         let expiry = parse_iso_datetime(expiry_str)
             .ok_or_else(|| CsError::Configuration(format!("Invalid expiry: {expiry_str}")))?;
-        if chrono::Local::now().naive_local() > expiry {
+        // Expiry timestamps are stored as naive UTC, so compare against UTC
+        // "now". (The Python version compared against naive local time,
+        // skewing expiry by the user's UTC offset.)
+        if chrono::Utc::now().naive_utc() > expiry {
             return Ok(None);
         }
 
@@ -416,9 +419,7 @@ pub fn parse_iso_datetime(s: &str) -> Option<NaiveDateTime> {
         }
     }
     // Fall back to RFC3339 with timezone (e.g. trailing Z or +00:00)
-    chrono::DateTime::parse_from_rfc3339(s)
-        .ok()
-        .map(|dt| dt.naive_utc())
+    crate::utils::parse_rfc3339_utc(s).map(|dt| dt.naive_utc())
 }
 
 #[cfg(test)]

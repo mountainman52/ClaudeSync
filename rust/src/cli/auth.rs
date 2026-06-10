@@ -8,21 +8,11 @@ use crate::provider::ClaudeProvider;
 const EXPIRY_FORMAT: &str = "%a, %d %b %Y %H:%M:%S";
 
 fn default_expiry() -> NaiveDateTime {
+    use chrono::Timelike;
     // 30 days out, truncated to whole seconds (matches the strftime roundtrip
     // in the Python version)
-    let expires = Utc::now() + Duration::days(30);
-    expires.naive_utc().with_nanosecond_zero()
-}
-
-trait TruncateNanos {
-    fn with_nanosecond_zero(self) -> NaiveDateTime;
-}
-
-impl TruncateNanos for NaiveDateTime {
-    fn with_nanosecond_zero(self) -> NaiveDateTime {
-        use chrono::Timelike;
-        self.with_nanosecond(0).unwrap_or(self)
-    }
+    let expires = (Utc::now() + Duration::days(30)).naive_utc();
+    expires.with_nanosecond(0).unwrap_or(expires)
 }
 
 fn parse_expiry(s: &str) -> Option<NaiveDateTime> {
