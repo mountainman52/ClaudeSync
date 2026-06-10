@@ -13,6 +13,8 @@
 
 ClaudeSync bridges your local development environment with Claude.ai projects, enabling seamless synchronization to enhance your AI-powered workflow.
 
+> **Rust port available:** a feature-equivalent Rust implementation lives in the [`rust/`](rust/) directory. It shares the same configuration files and encrypted session-key storage as the Python version, so the two are interchangeable. See [rust/README.md](rust/README.md) for build instructions.
+
 ![ClaudeSync in Action](claudesync.gif)
 
 ## ⚠️ Disclaimer
