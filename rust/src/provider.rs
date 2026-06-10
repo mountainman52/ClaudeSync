@@ -433,6 +433,44 @@ impl ClaudeProvider {
         )
     }
 
+    /// Send input/prompt to a Claude Code session. The actual endpoint is
+    /// undocumented, so several candidates are tried in order (port of
+    /// `send_session_input`).
+    pub fn send_session_input(
+        &self,
+        organization_id: &str,
+        session_id: &str,
+        prompt: &str,
+    ) -> Result<Value> {
+        let attempts = [
+            (
+                format!("/v1/sessions/{session_id}/prompt"),
+                json!({ "prompt": prompt }),
+            ),
+            (
+                format!("/v1/sessions/{session_id}/message"),
+                json!({ "message": prompt }),
+            ),
+            (
+                format!("/v1/sessions/{session_id}/messages"),
+                json!({ "content": prompt }),
+            ),
+            (
+                format!("/v1/sessions/{session_id}/input"),
+                json!({ "input": prompt }),
+            ),
+        ];
+
+        let mut last_error = None;
+        for (endpoint, data) in &attempts {
+            match self.make_request_v1("POST", endpoint, Some(data), Some(organization_id)) {
+                Ok(v) => return Ok(v),
+                Err(e) => last_error = Some(e),
+            }
+        }
+        Err(last_error.unwrap_or_else(|| CsError::Provider("No endpoints attempted".into())))
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub fn create_session(
         &self,

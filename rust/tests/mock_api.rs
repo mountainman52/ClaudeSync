@@ -1,140 +1,7 @@
 //! Integration tests against a local mock of the claude.ai API,
-//! mirroring the Python `tests/mock_http_server.py` approach.
+//! mirroring the Python `tests/test_claude_ai.py` approach.
 
-mod mock {
-    use std::io::{BufRead, BufReader, Read, Write};
-    use std::net::{TcpListener, TcpStream};
-    use std::sync::Arc;
-
-    pub struct Request {
-        pub method: String,
-        pub path: String,
-        pub body: String,
-    }
-
-    pub struct Response {
-        pub status: u16,
-        pub content_type: &'static str,
-        pub body: String,
-    }
-
-    impl Response {
-        pub fn json(body: serde_json::Value) -> Self {
-            Response {
-                status: 200,
-                content_type: "application/json",
-                body: body.to_string(),
-            }
-        }
-
-        pub fn status(status: u16, body: serde_json::Value) -> Self {
-            Response {
-                status,
-                content_type: "application/json",
-                body: body.to_string(),
-            }
-        }
-
-        pub fn sse(body: &str) -> Self {
-            Response {
-                status: 200,
-                content_type: "text/event-stream",
-                body: body.to_string(),
-            }
-        }
-
-        pub fn not_found() -> Self {
-            Response {
-                status: 404,
-                content_type: "text/plain",
-                body: "Not Found".to_string(),
-            }
-        }
-    }
-
-    pub type Handler = Arc<dyn Fn(&Request) -> Response + Send + Sync>;
-
-    /// Minimal single-purpose HTTP server for tests. Listens on an ephemeral
-    /// port and dispatches every request to `handler`.
-    pub struct MockServer {
-        pub port: u16,
-    }
-
-    impl MockServer {
-        pub fn start(handler: Handler) -> Self {
-            let listener = TcpListener::bind("127.0.0.1:0").expect("bind mock server");
-            let port = listener.local_addr().unwrap().port();
-            std::thread::spawn(move || {
-                for stream in listener.incoming() {
-                    let Ok(stream) = stream else { continue };
-                    let handler = Arc::clone(&handler);
-                    std::thread::spawn(move || handle_connection(stream, handler));
-                }
-            });
-            MockServer { port }
-        }
-
-        pub fn base_url(&self) -> String {
-            format!("http://127.0.0.1:{}/api", self.port)
-        }
-    }
-
-    fn handle_connection(stream: TcpStream, handler: Handler) {
-        let mut reader = BufReader::new(stream.try_clone().expect("clone stream"));
-        let mut request_line = String::new();
-        if reader.read_line(&mut request_line).is_err() || request_line.trim().is_empty() {
-            return;
-        }
-        let mut parts = request_line.split_whitespace();
-        let method = parts.next().unwrap_or("").to_string();
-        let path = parts.next().unwrap_or("").to_string();
-
-        let mut content_length = 0usize;
-        loop {
-            let mut line = String::new();
-            if reader.read_line(&mut line).is_err() {
-                return;
-            }
-            let line = line.trim_end();
-            if line.is_empty() {
-                break;
-            }
-            if let Some(value) = line.to_ascii_lowercase().strip_prefix("content-length:") {
-                content_length = value.trim().parse().unwrap_or(0);
-            }
-        }
-
-        let mut body = vec![0u8; content_length];
-        if content_length > 0 && reader.read_exact(&mut body).is_err() {
-            return;
-        }
-
-        let request = Request {
-            method,
-            path,
-            body: String::from_utf8_lossy(&body).to_string(),
-        };
-        let response = handler(&request);
-
-        let reason = match response.status {
-            200 => "OK",
-            204 => "No Content",
-            403 => "Forbidden",
-            429 => "Too Many Requests",
-            _ => "Error",
-        };
-        let mut out = stream;
-        let header = format!(
-            "HTTP/1.1 {} {}\r\nContent-Type: {}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
-            response.status,
-            reason,
-            response.content_type,
-            response.body.len()
-        );
-        let _ = out.write_all(header.as_bytes());
-        let _ = out.write_all(response.body.as_bytes());
-    }
-}
+mod common;
 
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -142,70 +9,9 @@ use std::sync::{Arc, Mutex};
 
 use serde_json::{json, Value};
 
-use claudesync::provider::ClaudeProvider;
 use claudesync::sync::{retry_on_403, SyncManager};
 use claudesync::utils::compute_md5_hash;
-use mock::{MockServer, Request, Response};
-
-/// Stateful router mirroring the Python MockClaudeAIHandler: orgs, projects,
-/// and an in-memory docs store supporting list/upload/delete.
-fn claude_api_router(docs: Arc<Mutex<Vec<Value>>>) -> mock::Handler {
-    let upload_counter = AtomicUsize::new(100);
-    Arc::new(move |req: &Request| {
-        let path = req.path.split('?').next().unwrap_or("");
-        match (req.method.as_str(), path) {
-            ("GET", "/api/organizations") => Response::json(json!([
-                {"uuid": "org1", "name": "Test Org 1", "capabilities": ["chat", "claude_pro"]},
-                {"uuid": "org2", "name": "Test Org 2", "capabilities": ["chat"]},
-            ])),
-            ("GET", p) if p.starts_with("/api/organizations/") && p.ends_with("/projects") => {
-                Response::json(json!([
-                    {"uuid": "proj1", "name": "Test Project 1", "archived_at": null},
-                    {"uuid": "proj2", "name": "Test Project 2", "archived_at": "2023-01-01"},
-                ]))
-            }
-            ("POST", p) if p.starts_with("/api/organizations/") && p.ends_with("/projects") => {
-                Response::json(json!({"uuid": "new_proj", "name": "New Project"}))
-            }
-            ("GET", p) if p.starts_with("/api/organizations/") && p.ends_with("/docs") => {
-                Response::json(Value::Array(docs.lock().unwrap().clone()))
-            }
-            ("POST", p) if p.starts_with("/api/organizations/") && p.ends_with("/docs") => {
-                let data: Value = serde_json::from_str(&req.body).unwrap_or(Value::Null);
-                let file = json!({
-                    "uuid": format!("file_{}", upload_counter.fetch_add(1, Ordering::SeqCst)),
-                    "file_name": data["file_name"],
-                    "content": data["content"],
-                    "created_at": "2023-01-01T00:00:00Z",
-                });
-                docs.lock().unwrap().push(file.clone());
-                Response::json(file)
-            }
-            ("DELETE", p) if p.contains("/docs/") => {
-                let uuid = p.rsplit('/').next().unwrap_or("");
-                docs.lock()
-                    .unwrap()
-                    .retain(|f| f["uuid"].as_str() != Some(uuid));
-                Response {
-                    status: 204,
-                    content_type: "application/json",
-                    body: String::new(),
-                }
-            }
-            ("POST", p) if p.ends_with("/completion") => Response::sse(concat!(
-                "data: {\"completion\": \"Hello\"}\n\n",
-                "data: {\"completion\": \" there. \"}\n\n",
-                "data: {\"completion\": \"I apologize for the confusion. You're right.\"}\n\n",
-                "event: done\n\n",
-            )),
-            _ => Response::not_found(),
-        }
-    })
-}
-
-fn provider_for(server: &MockServer) -> ClaudeProvider {
-    ClaudeProvider::new(server.base_url(), "sk-ant-test".to_string())
-}
+use common::{claude_api_router, provider_for, MockServer, Request, Response};
 
 #[test]
 fn organizations_filtered_by_capabilities() {
@@ -339,6 +145,138 @@ fn send_message_streams_sse_events() {
         completions,
         "Hello there. I apologize for the confusion. You're right."
     );
+}
+
+#[test]
+fn chat_conversations_listed_and_fetched() {
+    let server = MockServer::start(claude_api_router(Arc::new(Mutex::new(vec![]))));
+    let provider = provider_for(&server);
+
+    let chats = provider.get_chat_conversations("org1").unwrap();
+    let chats = chats.as_array().unwrap();
+    assert_eq!(chats.len(), 2);
+    assert_eq!(chats[0]["uuid"], "chat1");
+    assert_eq!(chats[0]["name"], "Test Chat 1");
+
+    let chat = provider.get_chat_conversation("org1", "chat1").unwrap();
+    assert_eq!(chat["uuid"], "chat1");
+    assert_eq!(chat["messages"].as_array().unwrap().len(), 2);
+
+    let new_chat = provider.create_chat("org1", "New Chat", Some("proj1"), None).unwrap();
+    assert_eq!(new_chat["uuid"], "new_chat");
+}
+
+#[test]
+fn create_session_with_explicit_branch() {
+    let server = MockServer::start(claude_api_router(Arc::new(Mutex::new(vec![]))));
+    let provider = provider_for(&server);
+
+    let result = provider
+        .create_session(
+            "org1",
+            "Test Session",
+            "env_test",
+            Some("https://github.com/test/repo"),
+            Some("test"),
+            Some("repo"),
+            Some("claude/test-branch"),
+            "claude-sonnet-4-5-20250929",
+        )
+        .unwrap();
+
+    assert_eq!(result["title"], "Test Session");
+    assert_eq!(result["session_status"], "running");
+    assert_eq!(result["environment_id"], "env_test");
+
+    let outcomes = result["session_context"]["outcomes"].as_array().unwrap();
+    assert_eq!(outcomes[0]["type"], "git_repository");
+    assert_eq!(outcomes[0]["git_info"]["repo"], "test/repo");
+    assert_eq!(outcomes[0]["git_info"]["branches"][0], "claude/test-branch");
+}
+
+#[test]
+fn create_session_auto_generates_branch_from_title() {
+    let server = MockServer::start(claude_api_router(Arc::new(Mutex::new(vec![]))));
+    let provider = provider_for(&server);
+
+    let result = provider
+        .create_session(
+            "org1",
+            "Auto Branch Session!",
+            "env_test",
+            Some("https://github.com/test/repo"),
+            Some("test"),
+            Some("repo"),
+            None, // no branch: should be generated from the title
+            "claude-sonnet-4-5-20250929",
+        )
+        .unwrap();
+
+    let branch = result["session_context"]["outcomes"][0]["git_info"]["branches"][0]
+        .as_str()
+        .unwrap();
+    assert_eq!(branch, "claude/auto-branch-session");
+}
+
+#[test]
+fn create_session_minimal_has_no_git_context() {
+    let server = MockServer::start(claude_api_router(Arc::new(Mutex::new(vec![]))));
+    let provider = provider_for(&server);
+
+    let result = provider
+        .create_session(
+            "org1",
+            "Minimal Session",
+            "env_test",
+            None,
+            None,
+            None,
+            None,
+            "claude-sonnet-4-5-20250929",
+        )
+        .unwrap();
+
+    assert_eq!(result["title"], "Minimal Session");
+    let context = &result["session_context"];
+    assert!(context.get("sources").is_none());
+    assert!(context.get("outcomes").is_none());
+}
+
+#[test]
+fn stream_session_events_collects_events_until_done() {
+    let server = MockServer::start(claude_api_router(Arc::new(Mutex::new(vec![]))));
+    let provider = provider_for(&server);
+
+    let mut events: Vec<Value> = Vec::new();
+    provider
+        .stream_session_events("org1", "session_test123", |event| {
+            events.push(event.clone());
+            true
+        })
+        .unwrap();
+
+    assert!(events.len() >= 3, "expected >= 3 events, got {events:?}");
+    assert_eq!(events[0]["type"], "session_status");
+    assert_eq!(events[0]["status"], "running");
+    assert_eq!(events[1]["type"], "message");
+    assert!(events[1]["content"]
+        .as_str()
+        .unwrap()
+        .contains("Starting Claude Code"));
+}
+
+#[test]
+fn send_session_input_falls_back_to_working_endpoint() {
+    // /prompt, /message and /messages 404; the provider must fall through
+    // to /input and succeed.
+    let server = MockServer::start(claude_api_router(Arc::new(Mutex::new(vec![]))));
+    let provider = provider_for(&server);
+
+    let result = provider
+        .send_session_input("org1", "session_test123", "Hello, please help me fix a bug")
+        .unwrap();
+    assert_eq!(result["status"], "accepted");
+    assert_eq!(result["input_received"], "Hello, please help me fix a bug");
 }
 
 #[test]

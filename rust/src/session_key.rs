@@ -21,23 +21,19 @@ impl SessionKeyManager {
         Ok(SessionKeyManager { ssh_key_path })
     }
 
-    /// Locate an SSH private key for session encryption.
+    /// Locate an SSH private key without user interaction.
     /// Priority:
     ///   1. If configured_path points to a specific file, use it directly
-    ///   2. If configured_path is a directory, search it alongside ~/.ssh
-    ///   3. Fall back to ~/.ssh with default key names
-    ///   4. Prompt the user as a last resort
-    fn find_ssh_key(configured_path: Option<&str>) -> Result<PathBuf> {
-        let home = dirs::home_dir()
-            .ok_or_else(|| CsError::Configuration("Cannot determine home directory".into()))?;
-        let default_ssh_dir = home.join(".ssh");
+    ///   2. If configured_path is a directory, search it alongside the default dir
+    ///   3. Fall back to the default dir (~/.ssh) with default key names
+    fn locate_ssh_key(configured_path: Option<&str>, default_ssh_dir: &std::path::Path) -> Option<PathBuf> {
         let key_names = ["id_ed25519", "id_ecdsa"];
-        let mut search_dirs = vec![default_ssh_dir.clone()];
+        let mut search_dirs = vec![default_ssh_dir.to_path_buf()];
 
         if let Some(configured) = configured_path {
             let configured = PathBuf::from(configured);
             if configured.is_file() {
-                return Ok(configured);
+                return Some(configured);
             }
             if configured.is_dir() {
                 if configured != default_ssh_dir {
@@ -52,9 +48,19 @@ impl SessionKeyManager {
             for name in &key_names {
                 let candidate = dir.join(name);
                 if candidate.exists() {
-                    return Ok(candidate);
+                    return Some(candidate);
                 }
             }
+        }
+        None
+    }
+
+    /// Locate an SSH private key, prompting the user as a last resort.
+    fn find_ssh_key(configured_path: Option<&str>) -> Result<PathBuf> {
+        let home = dirs::home_dir()
+            .ok_or_else(|| CsError::Configuration("Cannot determine home directory".into()))?;
+        if let Some(found) = Self::locate_ssh_key(configured_path, &home.join(".ssh")) {
+            return Ok(found);
         }
 
         eprintln!("* No supported SSH key found. RSA keys are no longer supported.");
@@ -147,6 +153,67 @@ impl SessionKeyManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // Ports of tests/test_session_key_manager.py (key discovery logic)
+
+    #[test]
+    fn configured_file_path_used_directly() {
+        let dir = tempfile::tempdir().unwrap();
+        let key_file = dir.path().join("my_custom_key");
+        std::fs::write(&key_file, "fake-key-content").unwrap();
+
+        let found = SessionKeyManager::locate_ssh_key(
+            key_file.to_str(),
+            &dir.path().join("unused_default"),
+        );
+        assert_eq!(found, Some(key_file));
+    }
+
+    #[test]
+    fn configured_directory_searched_for_standard_names() {
+        let dir = tempfile::tempdir().unwrap();
+        let key_file = dir.path().join("id_ed25519");
+        std::fs::write(&key_file, "fake-key-content").unwrap();
+
+        let found = SessionKeyManager::locate_ssh_key(
+            dir.path().to_str(),
+            &dir.path().join("unused_default"),
+        );
+        assert_eq!(found, Some(key_file));
+    }
+
+    #[test]
+    fn falls_back_to_default_ssh_dir() {
+        let home = tempfile::tempdir().unwrap();
+        let ssh_dir = home.path().join(".ssh");
+        std::fs::create_dir(&ssh_dir).unwrap();
+        let key_file = ssh_dir.join("id_ecdsa");
+        std::fs::write(&key_file, "fake-key-content").unwrap();
+
+        let found = SessionKeyManager::locate_ssh_key(None, &ssh_dir);
+        assert_eq!(found, Some(key_file));
+    }
+
+    #[test]
+    fn nonexistent_configured_path_falls_through_to_default() {
+        let home = tempfile::tempdir().unwrap();
+        let ssh_dir = home.path().join(".ssh");
+        std::fs::create_dir(&ssh_dir).unwrap();
+        let key_file = ssh_dir.join("id_ed25519");
+        std::fs::write(&key_file, "fake-key-content").unwrap();
+
+        let found = SessionKeyManager::locate_ssh_key(Some("/nonexistent/path"), &ssh_dir);
+        assert_eq!(found, Some(key_file));
+    }
+
+    #[test]
+    fn no_key_anywhere_returns_none() {
+        let home = tempfile::tempdir().unwrap();
+        let ssh_dir = home.path().join(".ssh");
+        std::fs::create_dir(&ssh_dir).unwrap();
+
+        assert_eq!(SessionKeyManager::locate_ssh_key(None, &ssh_dir), None);
+    }
 
     #[test]
     fn symmetric_roundtrip() {

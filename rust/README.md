@@ -53,6 +53,17 @@ cargo install --path rust
 - **Compression**: all algorithms are supported (`zlib`, `bz2`, `lzma`,
   `brotli`, `dictionary`, `rle`, `huffman`, `lzw`, `pack`, `none`).
 
+### Not ported (intentionally)
+
+- `InMemoryConfigManager` — existed to support Python's in-process tests and
+  submodule config cloning. Rust tests construct providers and sync managers
+  directly, and submodule syncing uses `SyncManager::with_project` instead.
+- `BaseProvider` / `BaseClaudeAIProvider` abstract classes — with a single
+  concrete provider there is no need for a trait; the hierarchy is folded
+  into `ClaudeProvider`.
+- `tests/logging_test_case.py` — unittest logging scaffolding with no Rust
+  equivalent needed (`cargo test` captures output natively).
+
 ### Intentional differences
 
 - `claudesync schedule` installs the cron entry to run `claudesync push`
@@ -72,12 +83,21 @@ cargo clippy
 ```
 
 Unit tests cover the pure logic (compression roundtrips, config defaults,
-session-key crypto, artifact extraction). Integration tests in
-`tests/mock_api.rs` spin up a local mock of the claude.ai API — the Rust
-counterpart of the Python `tests/mock_http_server.py` — and exercise the HTTP
-layer end to end: capability filtering, the full sync flow
-(upload/update/prune), SSE message streaming, and 403/429/5xx error mapping
-including the retry-on-403 behavior.
+session-key crypto and SSH key discovery, artifact extraction).
+
+Integration tests run against a local mock of the claude.ai API
+(`tests/common/mod.rs`, the Rust counterpart of the Python
+`tests/mock_http_server.py`):
+
+- `tests/mock_api.rs` — provider-level coverage: capability filtering, the
+  full sync flow (upload/update/prune), chat conversations, Claude Code
+  session creation (including branch auto-generation), SSE streaming for
+  chats and session events, the `send_session_input` endpoint fallback, and
+  403/429/5xx error mapping including retry-on-403.
+- `tests/cli_happy_path.rs` — drives the compiled binary end to end (port of
+  `test_happy_path.py` / `test_chat_happy_path.py`): login → organization
+  set → project init → push → chat message, with HOME isolated to a temp
+  directory and a stub `ssh-keygen` on PATH.
 
 To test the built binary manually against a mock, point `claude_api_url` at a
 local server (e.g. the Python mock):
