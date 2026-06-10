@@ -67,8 +67,24 @@ cargo install --path rust
 ## Development
 
 ```bash
-cargo test     # unit tests (compression roundtrips, config, crypto, artifacts)
+cargo test     # unit + integration tests
 cargo clippy
+```
+
+Unit tests cover the pure logic (compression roundtrips, config defaults,
+session-key crypto, artifact extraction). Integration tests in
+`tests/mock_api.rs` spin up a local mock of the claude.ai API — the Rust
+counterpart of the Python `tests/mock_http_server.py` — and exercise the HTTP
+layer end to end: capability filtering, the full sync flow
+(upload/update/prune), SSE message streaming, and 403/429/5xx error mapping
+including the retry-on-403 behavior.
+
+To test the built binary manually against a mock, point `claude_api_url` at a
+local server (e.g. the Python mock):
+
+```bash
+python tests/mock_http_server.py &           # from the repository root
+claudesync config set claude_api_url http://127.0.0.1:8000/api
 ```
 
 Source layout mirrors the Python package:

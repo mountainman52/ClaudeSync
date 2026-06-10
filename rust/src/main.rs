@@ -1,18 +1,9 @@
-mod chat_sync;
-mod cli;
-mod compression;
-mod config;
-mod error;
-mod provider;
-mod session_key;
-mod sync;
-mod utils;
-
 use clap::{CommandFactory, Parser, Subcommand, ValueEnum};
 use clap_complete::Shell;
 
-use crate::config::FileConfig;
-use crate::error::Result;
+use claudesync::cli;
+use claudesync::config::FileConfig;
+use claudesync::error::Result;
 
 /// ClaudeSync: Synchronize local files with AI projects.
 #[derive(Parser)]
@@ -339,7 +330,7 @@ enum SessionCommands {
         #[arg(short, long)]
         environment_id: Option<String>,
         /// Model to use
-        #[arg(short, long, default_value = crate::provider::DEFAULT_SESSION_MODEL)]
+        #[arg(short, long, default_value = claudesync::provider::DEFAULT_SESSION_MODEL)]
         model: String,
         /// Branch name to create (auto-generated if not provided)
         #[arg(short, long)]

@@ -5,6 +5,10 @@ edition = "2021"
 description = "Synchronize local files with Claude.ai projects (Rust port of ClaudeSync)"
 license = "MIT"
 
+[lib]
+name = "claudesync"
+path = "src/lib.rs"
+
 [[bin]]
 name = "claudesync"
 path = "src/main.rs"
