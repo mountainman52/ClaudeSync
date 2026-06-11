@@ -15,6 +15,8 @@ ClaudeSync bridges your local development environment with Claude.ai projects, e
 
 > **Rust port available:** a feature-equivalent Rust implementation lives in the [`rust/`](rust/) directory. It shares the same configuration files and encrypted session-key storage as the Python version, so the two are interchangeable. See [rust/README.md](rust/README.md) for build instructions.
 
+> **macOS menu bar app:** a native SwiftUI companion app lives in [`swift/`](swift/) — login, project setup, manual and FSEvents-driven auto-sync from the menu bar, sharing the same config files and Keychain entry as the Rust CLI. See [swift/README.md](swift/README.md).
+
 ![ClaudeSync in Action](claudesync.gif)
 
 ## ⚠️ Disclaimer
