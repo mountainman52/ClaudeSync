@@ -3,6 +3,7 @@ pub mod cli;
 pub mod compression;
 pub mod config;
 pub mod error;
+pub mod keyring_store;
 pub mod provider;
 pub mod session_key;
 pub mod sync;

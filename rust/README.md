@@ -42,6 +42,22 @@ cargo install --path rust
 
 ### macOS notes
 
+- **Session keys are stored in the macOS Keychain** (service `claudesync`)
+  by default — encrypted at rest by the OS, unlocked with your login
+  session, and access-controlled per application. This replaces the file
+  scheme, whose encryption key is derived from your SSH private key with a
+  fixed salt (little real protection from anyone who can already read your
+  home directory). Behavior of `session_key_storage` (set via
+  `claudesync config set session_key_storage <value>`):
+  - `auto` (default): Keychain on macOS, file elsewhere. Reads fall back to
+    an existing file key, so you stay logged in after upgrading; the next
+    `auth login` writes to the Keychain and removes the file copy.
+  - `keychain` (or `keyring`): always the OS credential store.
+  - `file`: the Python-compatible file scheme (use this if you switch
+    between the Python and Rust versions on the same machine).
+  macOS may prompt to allow keychain access the first time a newly built
+  binary reads the key — choose "Always Allow". `auth logout` clears both
+  stores.
 - `claudesync auth login --from-clipboard` reads the session key straight
   from the clipboard (`pbpaste`) after you copy it from the browser's
   developer tools.
@@ -57,10 +73,12 @@ cargo install --path rust
 
 - **Configuration**: reads/writes the same `~/.claudesync/config.json` and
   `<project>/.claudesync/config.local.json` files.
-- **Session keys**: stored in `~/.claudesync/claude.ai.key`, encrypted with a
-  Fernet key derived from your SSH private key via PBKDF2-HMAC-SHA256 with the
-  same salt and iteration count — keys written by one implementation can be
-  read by the other.
+- **Session keys**: on macOS they are stored in the **Keychain** by default
+  (see below). With `session_key_storage = "file"` (the default elsewhere),
+  keys live in `~/.claudesync/claude.ai.key`, encrypted with a Fernet key
+  derived from your SSH private key via PBKDF2-HMAC-SHA256 with the same salt
+  and iteration count as the Python version — file-stored keys written by one
+  implementation can be read by the other.
 - **File filtering**: honors `.gitignore`, `.claudeignore`, file categories,
   the `max_file_size` limit, and the text-file heuristic, with the same
   excluded directories (`.git`, `claude_chats`, `.claudesync`, ...).

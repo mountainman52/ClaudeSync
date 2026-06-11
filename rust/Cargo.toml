@@ -29,6 +29,7 @@ indicatif = "0.17"
 dialoguer = "0.11"
 thiserror = "1"
 fernet = "0.2"
+keyring = { version = "3", features = ["apple-native", "windows-native", "linux-native"] }
 pbkdf2 = "0.12"
 sha2 = "0.10"
 base64 = "0.22"

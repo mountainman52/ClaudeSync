@@ -6,7 +6,23 @@ use chrono::NaiveDateTime;
 use serde_json::{json, Map, Value};
 
 use crate::error::{CsError, Result};
+use crate::keyring_store;
 use crate::session_key::SessionKeyManager;
+
+/// Providers the CLI knows about (used to enumerate credential-store keys,
+/// which cannot be listed the way `*.key` files can).
+const KNOWN_PROVIDERS: [&str; 1] = ["claude.ai"];
+
+/// Where session keys are stored (config key `session_key_storage`).
+#[derive(PartialEq)]
+enum SessionKeyStorage {
+    /// OS credential store on macOS, file elsewhere
+    Auto,
+    /// Always the OS credential store (Keychain / Credential Manager / keyutils)
+    Keyring,
+    /// Always the SSH-key-encrypted file (compatible with the Python version)
+    File,
+}
 
 /// Returns the default configuration (port of `BaseConfigManager._get_default_config`).
 pub fn default_config() -> Map<String, Value> {
@@ -18,6 +34,9 @@ pub fn default_config() -> Map<String, Value> {
         "prune_remote_files": true,
         "claude_api_url": "https://claude.ai/api",
         "compression_algorithm": "none",
+        // "auto" (OS credential store on macOS, file elsewhere),
+        // "keychain"/"keyring", or "file"
+        "session_key_storage": "auto",
         "submodule_detect_filenames": [
             "pom.xml",
             "build.gradle",
@@ -251,7 +270,47 @@ impl FileConfig {
         Ok(())
     }
 
+    fn session_key_storage(&self) -> SessionKeyStorage {
+        match self.get_str("session_key_storage").as_deref() {
+            Some("keychain") | Some("keyring") => SessionKeyStorage::Keyring,
+            Some("file") => SessionKeyStorage::File,
+            _ => SessionKeyStorage::Auto,
+        }
+    }
+
     pub fn set_session_key(
+        &self,
+        provider: &str,
+        session_key: &str,
+        expiry: NaiveDateTime,
+    ) -> Result<()> {
+        match self.session_key_storage() {
+            SessionKeyStorage::Keyring => {
+                keyring_store::store(provider, session_key, expiry)?;
+                // Remove the weaker file-encrypted copy now that the OS
+                // credential store holds the key
+                let _ = self.remove_session_key_file(provider);
+                Ok(())
+            }
+            SessionKeyStorage::File => self.set_session_key_file(provider, session_key, expiry),
+            SessionKeyStorage::Auto => {
+                if keyring_store::is_default_platform() {
+                    match keyring_store::store(provider, session_key, expiry) {
+                        Ok(()) => {
+                            let _ = self.remove_session_key_file(provider);
+                            return Ok(());
+                        }
+                        Err(e) => {
+                            log::warn!("Credential store unavailable ({e}); falling back to file storage");
+                        }
+                    }
+                }
+                self.set_session_key_file(provider, session_key, expiry)
+            }
+        }
+    }
+
+    fn set_session_key_file(
         &self,
         provider: &str,
         session_key: &str,
@@ -271,8 +330,33 @@ impl FileConfig {
         Ok(())
     }
 
+    fn remove_session_key_file(&self, provider: &str) -> Result<()> {
+        let key_file = self.global_config_dir.join(format!("{provider}.key"));
+        if key_file.exists() {
+            fs::remove_file(key_file)?;
+        }
+        Ok(())
+    }
+
     /// Returns (session_key, expiry) if a valid, unexpired key exists.
     pub fn get_session_key(&self, provider: &str) -> Result<Option<(String, NaiveDateTime)>> {
+        match self.session_key_storage() {
+            SessionKeyStorage::Keyring => keyring_store::retrieve(provider),
+            SessionKeyStorage::File => self.get_session_key_file(provider),
+            SessionKeyStorage::Auto => {
+                if keyring_store::is_default_platform() {
+                    match keyring_store::retrieve(provider) {
+                        Ok(Some(found)) => return Ok(Some(found)),
+                        Ok(None) => {} // fall through to a pre-existing file key
+                        Err(e) => log::warn!("Credential store read failed: {e}"),
+                    }
+                }
+                self.get_session_key_file(provider)
+            }
+        }
+    }
+
+    fn get_session_key_file(&self, provider: &str) -> Result<Option<(String, NaiveDateTime)>> {
         let key_file = self.global_config_dir.join(format!("{provider}.key"));
         if !key_file.exists() {
             return Ok(None);
@@ -317,6 +401,10 @@ impl FileConfig {
                 }
             }
         }
+        for provider in KNOWN_PROVIDERS {
+            // Best-effort: the credential store may be absent on this platform
+            let _ = keyring_store::delete(provider);
+        }
         Ok(())
     }
 
@@ -328,20 +416,27 @@ impl FileConfig {
     }
 
     pub fn get_providers_with_session_keys(&self) -> Result<Vec<String>> {
-        let mut providers = BTreeSet::new();
+        // Candidates: any *.key file plus the providers the credential store
+        // might hold (the store can't be enumerated by service)
+        let mut candidates: BTreeSet<String> =
+            KNOWN_PROVIDERS.iter().map(|p| p.to_string()).collect();
         if self.global_config_dir.is_dir() {
             for entry in fs::read_dir(&self.global_config_dir)? {
                 let path = entry?.path();
                 if path.extension().map(|e| e == "key").unwrap_or(false) {
                     if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
-                        if self.get_session_key(stem)?.is_some() {
-                            providers.insert(stem.to_string());
-                        }
+                        candidates.insert(stem.to_string());
                     }
                 }
             }
         }
-        Ok(providers.into_iter().collect())
+        let mut providers = Vec::new();
+        for candidate in candidates {
+            if self.get_session_key(&candidate)?.is_some() {
+                providers.push(candidate);
+            }
+        }
+        Ok(providers)
     }
 
     pub fn get_default_category(&self) -> Option<String> {
