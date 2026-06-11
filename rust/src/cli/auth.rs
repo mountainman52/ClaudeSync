@@ -77,12 +77,41 @@ fn validate_session_key(
     Ok(())
 }
 
+/// Reads the session key from the system clipboard (macOS `pbpaste`).
+fn read_clipboard_session_key() -> Result<String> {
+    let output = std::process::Command::new("pbpaste").output().map_err(|_| {
+        CsError::Configuration(
+            "--from-clipboard requires the macOS 'pbpaste' command. \
+             Use --session-key or the interactive prompt instead."
+                .into(),
+        )
+    })?;
+    if !output.status.success() {
+        return Err(CsError::Configuration("Failed to read the clipboard.".into()));
+    }
+    let key = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if key.is_empty() {
+        return Err(CsError::Configuration(
+            "Clipboard is empty. Copy the sessionKey cookie value first.".into(),
+        ));
+    }
+    println!("Using session key from clipboard.");
+    Ok(key)
+}
+
 pub fn login(
     config: &mut FileConfig,
     provider_name: &str,
     session_key: Option<String>,
     auto_approve: bool,
+    from_clipboard: bool,
 ) -> Result<()> {
+    let session_key = match (session_key, from_clipboard) {
+        (Some(key), _) => Some(key),
+        (None, true) => Some(read_clipboard_session_key()?),
+        (None, false) => None,
+    };
+
     if let Some(key) = session_key {
         // Non-interactive: a session key was provided directly
         if !key.starts_with("sk-ant") {

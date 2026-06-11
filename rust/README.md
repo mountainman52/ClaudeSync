@@ -30,14 +30,28 @@ cargo install --path rust
 | `claudesync project init/create/set/ls/archive/truncate` | Manage Claude.ai projects |
 | `claudesync project submodule ls/create` | Detect and manage submodule projects |
 | `claudesync project file ls` | List remote project files |
-| `claudesync push [--category --uberproject --dryrun]` | Sync local files to the remote project |
+| `claudesync push [--category --uberproject --dryrun]` | Sync local files to the remote project (`--dryrun` shows a new/changed/deleted diff) |
+| `claudesync watch [--interval N]` | Foreground auto-push: polls for changes and pushes when they appear |
 | `claudesync embedding` | Pack (and optionally compress) the project into a single text blob |
 | `claudesync chat pull/ls/rm/init/message` | Sync and manage chats and artifacts |
 | `claudesync session ls/create/archive` | Manage Claude Code web sessions |
 | `claudesync session environment ls`, `session branch ls` | List environments / connected repos |
 | `claudesync config set/get/ls`, `config category ...` | Manage configuration and file categories |
-| `claudesync schedule` | Install a cron entry for periodic syncing |
+| `claudesync schedule [--remove]` | Install (or remove) a periodic sync job — launchd on macOS, cron on other Unix |
 | `claudesync install-completion [shell]` | Print shell completion script |
+
+### macOS notes
+
+- `claudesync auth login --from-clipboard` reads the session key straight
+  from the clipboard (`pbpaste`) after you copy it from the browser's
+  developer tools.
+- `claudesync schedule` installs a launchd agent
+  (`~/Library/LaunchAgents/com.claudesync.push.plist`) instead of a cron
+  entry; output goes to `~/Library/Logs/claudesync.log`. Remove it with
+  `claudesync schedule --remove`. The job runs `push` in the project
+  directory you scheduled from.
+- For a session-scoped alternative that needs no scheduler at all, run
+  `claudesync watch` in a terminal tab.
 
 ## Compatibility with the Python version
 
@@ -80,6 +94,16 @@ Fixes for upstream flaws (deliberate divergences from the Python behavior):
   to files lacking one (and a blank line to files ending with one). The Rust
   roundtrip preserves content exactly (covered by a unit test).
 
+Additions beyond the Python feature set:
+
+- `claudesync watch` — foreground polling auto-push.
+- `claudesync schedule` uses launchd on macOS, supports `--remove` on all
+  platforms, and anchors the scheduled job to the project directory (the
+  Python cron entry ran in `$HOME`, where no project would be found).
+- `claudesync auth login --from-clipboard` (macOS `pbpaste`).
+- `push --dryrun` prints a diff (new/changed/would-delete/unchanged) instead
+  of only listing local files.
+
 Other differences:
 
 - `claudesync schedule` installs the cron entry to run `claudesync push`
@@ -115,11 +139,18 @@ Integration tests run against a local mock of the claude.ai API
   set → project init → push → chat message, with HOME isolated to a temp
   directory and a stub `ssh-keygen` on PATH.
 
-To test the built binary manually against a mock, point `claude_api_url` at a
-local server (e.g. the Python mock):
+The mock validates requests like the real API would: every endpoint requires a
+`sessionKey=sk-ant...` cookie (401 otherwise), `/v1/` endpoints require the
+`anthropic-version` and `x-organization-uuid` headers (400 otherwise), and
+responses can be served gzip-encoded to exercise the client's decompression.
+The server records every request, so tests can assert call ordering (e.g.
+delete-before-reupload during sync).
+
+To test the built binary manually, run the mock standalone and point the CLI
+at it (log in with any key starting with `sk-ant`):
 
 ```bash
-python tests/mock_http_server.py &           # from the repository root
+cargo run --example mock_server -- 8000      # from the rust/ directory
 claudesync config set claude_api_url http://127.0.0.1:8000/api
 ```
 

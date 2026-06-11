@@ -1,10 +1,12 @@
+use std::collections::{BTreeMap, HashMap};
+
 use serde_json::Value;
 
 use crate::config::FileConfig;
 use crate::error::Result;
-use crate::provider::ClaudeProvider;
+use crate::provider::{ClaudeProvider, RemoteFile};
 use crate::sync::SyncManager;
-use crate::utils::{get_local_files, validate_and_get_provider};
+use crate::utils::{compute_md5_hash, get_local_files, validate_and_get_provider};
 
 fn resolve_category(config: &FileConfig, category: Option<String>) -> Option<String> {
     match category {
@@ -75,10 +77,7 @@ pub fn push(
     let local_files = get_local_files(config, &local_path, category.as_deref(), uberproject)?;
 
     if dryrun {
-        for file in local_files.keys() {
-            println!("Would send file: {file}");
-        }
-        println!("Not sending files due to dry run mode.");
+        print_dryrun_diff(config, &local_files, &remote_files);
         return Ok(());
     }
 
@@ -92,6 +91,105 @@ pub fn push(
         sync_submodule(&provider, config, submodule, category.as_deref())?;
     }
     Ok(())
+}
+
+/// Reports what `push` would do against the remote: new uploads, content
+/// updates, prunes, and the unchanged count.
+fn print_dryrun_diff(
+    config: &FileConfig,
+    local_files: &BTreeMap<String, String>,
+    remote_files: &[RemoteFile],
+) {
+    let mut remote_by_name: HashMap<&str, &RemoteFile> = HashMap::new();
+    for rf in remote_files {
+        remote_by_name.entry(rf.file_name.as_str()).or_insert(rf);
+    }
+
+    let mut new_files = Vec::new();
+    let mut changed = Vec::new();
+    let mut unchanged = 0usize;
+    for (file, local_hash) in local_files {
+        match remote_by_name.get(file.as_str()) {
+            None => new_files.push(file.as_str()),
+            Some(rf) if compute_md5_hash(&rf.content) != *local_hash => {
+                changed.push(file.as_str())
+            }
+            Some(_) => unchanged += 1,
+        }
+    }
+    let mut to_delete: Vec<&str> = remote_files
+        .iter()
+        .filter(|rf| !local_files.contains_key(&rf.file_name))
+        .map(|rf| rf.file_name.as_str())
+        .collect();
+    to_delete.sort();
+    to_delete.dedup();
+
+    if !new_files.is_empty() {
+        println!("Would upload ({} new):", new_files.len());
+        for f in &new_files {
+            println!("  + {f}");
+        }
+    }
+    if !changed.is_empty() {
+        println!("Would update ({} changed):", changed.len());
+        for f in &changed {
+            println!("  ~ {f}");
+        }
+    }
+    if config.get_bool("prune_remote_files", false) && !to_delete.is_empty() {
+        println!("Would delete remotely ({}):", to_delete.len());
+        for f in &to_delete {
+            println!("  - {f}");
+        }
+    }
+    println!("Unchanged: {unchanged}");
+    println!("Dry run: no changes were sent.");
+}
+
+/// Polls the project for local changes and pushes whenever they appear — a
+/// foreground alternative to cron/launchd scheduling.
+pub fn watch(
+    config: &FileConfig,
+    category: Option<String>,
+    uberproject: bool,
+    interval: u64,
+) -> Result<()> {
+    let local_path = match config.get_local_path() {
+        Some(p) => p,
+        None => {
+            println!(
+                "No .claudesync directory found in this directory or any parent directories. \
+                 Please run 'claudesync project create' or 'claudesync project set' first."
+            );
+            return Ok(());
+        }
+    };
+    let category = resolve_category(config, category);
+    println!(
+        "Watching {} for changes every {interval}s (Ctrl+C to stop)...",
+        local_path.display()
+    );
+
+    let mut last: Option<BTreeMap<String, String>> = None;
+    loop {
+        let snapshot = get_local_files(config, &local_path, category.as_deref(), uberproject)?;
+        if last.as_ref() != Some(&snapshot) {
+            if last.is_some() {
+                println!("[watch] Change detected; pushing...");
+            } else {
+                println!("[watch] Initial push...");
+            }
+            match push(config, category.clone(), uberproject, false) {
+                Ok(()) => last = Some(snapshot),
+                // Keep watching through transient provider errors (rate
+                // limits, network blips); they'll be retried next cycle.
+                Err(e) if e.is_handled() => println!("Error: {e}"),
+                Err(e) => return Err(e),
+            }
+        }
+        std::thread::sleep(std::time::Duration::from_secs(interval));
+    }
 }
 
 fn sync_submodule(

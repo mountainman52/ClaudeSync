@@ -168,4 +168,30 @@ fn cli_happy_path_login_init_push_and_chat() {
         out.contains("I apologize for the confusion. You're right."),
         "{out}"
     );
+
+    // Step 6: pull chats — metadata, messages, and extracted artifacts land
+    // on disk; the chat belonging to another project is skipped
+    env.run_ok(&proj, &["chat", "pull"]);
+    let chat_dir = proj.join("claude_chats").join("chat1");
+    assert!(chat_dir.join("metadata.json").exists());
+    assert!(chat_dir.join("msg1.json").exists());
+    assert!(chat_dir.join("msg2.json").exists());
+    let artifact = chat_dir.join("artifacts").join("hello-script.txt");
+    let artifact_content = std::fs::read_to_string(&artifact).expect("artifact file written");
+    assert_eq!(artifact_content, "print(\"hi\")");
+    assert!(!proj.join("claude_chats").join("chat2").exists());
+
+    // Step 7: dry run reports a diff instead of pushing
+    std::fs::write(proj.join("test.txt"), "edited content").unwrap();
+    std::fs::write(proj.join("second.txt"), "another file").unwrap();
+    let out = env.run_ok(&proj, &["push", "--dryrun"]);
+    assert!(out.contains("+ second.txt"), "{out}");
+    assert!(out.contains("~ test.txt"), "{out}");
+    assert!(out.contains("Dry run: no changes were sent."), "{out}");
+    {
+        // Nothing was actually pushed
+        let docs = docs.lock().unwrap();
+        assert_eq!(docs.len(), 1);
+        assert_eq!(docs[0]["content"], "hello from the happy path");
+    }
 }

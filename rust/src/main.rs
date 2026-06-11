@@ -78,11 +78,26 @@ enum Commands {
         #[arg(long)]
         uberproject: bool,
     },
-    /// Set up automated synchronization at regular intervals
+    /// Watch the project and push automatically when files change
+    Watch {
+        /// Specify the file category to sync
+        #[arg(long)]
+        category: Option<String>,
+        /// Include submodules in the parent project sync
+        #[arg(long)]
+        uberproject: bool,
+        /// Seconds between change scans
+        #[arg(long, default_value_t = 30)]
+        interval: u64,
+    },
+    /// Set up automated synchronization (launchd on macOS, cron on other Unix)
     Schedule {
         /// Sync interval in minutes
         #[arg(long)]
         interval: Option<u32>,
+        /// Remove the scheduled sync job
+        #[arg(long)]
+        remove: bool,
     },
     /// Upgrade ClaudeSync to the latest version
     Upgrade,
@@ -106,6 +121,9 @@ enum AuthCommands {
         /// Automatically approve the suggested expiry time
         #[arg(long)]
         auto_approve: bool,
+        /// Read the session key from the clipboard (macOS pbpaste)
+        #[arg(long, conflicts_with = "session_key")]
+        from_clipboard: bool,
     },
     /// Log out from all AI providers
     Logout,
@@ -406,7 +424,14 @@ fn run(cli: Cli, config: &mut FileConfig) -> Result<()> {
                 provider,
                 session_key,
                 auto_approve,
-            } => cli::auth::login(config, provider.as_str(), session_key, auto_approve),
+                from_clipboard,
+            } => cli::auth::login(
+                config,
+                provider.as_str(),
+                session_key,
+                auto_approve,
+                from_clipboard,
+            ),
             AuthCommands::Logout => cli::auth::logout(config),
             AuthCommands::Ls => cli::auth::ls(config),
         },
@@ -531,7 +556,12 @@ fn run(cli: Cli, config: &mut FileConfig) -> Result<()> {
             category,
             uberproject,
         } => cli::push::embedding(config, category, uberproject),
-        Commands::Schedule { interval } => cli::schedule::schedule(interval),
+        Commands::Watch {
+            category,
+            uberproject,
+            interval,
+        } => cli::push::watch(config, category, uberproject, interval),
+        Commands::Schedule { interval, remove } => cli::schedule::schedule(interval, remove),
         Commands::Upgrade => {
             println!(
                 "The Rust version of ClaudeSync is upgraded via cargo or your package manager:"

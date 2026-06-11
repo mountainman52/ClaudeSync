@@ -125,6 +125,44 @@ fn sync_uploads_updates_and_prunes() {
     assert_ne!(by_name("changed.txt")["uuid"], "r2");
     assert_eq!(by_name("changed.txt")["content"], "new version");
     assert!(!final_docs.iter().any(|f| f["uuid"] == "r3"));
+    drop(final_docs);
+
+    // The changed file's stale copy was deleted before the replacement upload
+    let log = server.requests.lock().unwrap();
+    let delete_idx = log
+        .iter()
+        .position(|(m, p, _)| m == "DELETE" && p.ends_with("/docs/r2"))
+        .expect("delete of r2 not logged");
+    let upload_idx = log
+        .iter()
+        .position(|(m, p, b)| m == "POST" && p.ends_with("/docs") && b.contains("changed.txt"))
+        .expect("upload of changed.txt not logged");
+    assert!(delete_idx < upload_idx, "delete must precede re-upload");
+}
+
+#[test]
+fn gzip_responses_are_decompressed() {
+    let server = MockServer::start(Arc::new(|_req: &Request| {
+        Response::json_gzip(json!([
+            {"uuid": "org1", "name": "Gzipped Org", "capabilities": ["chat", "claude_pro"]},
+        ]))
+    }));
+    let provider = provider_for(&server);
+
+    let orgs = provider.get_organizations().unwrap();
+    assert_eq!(orgs.len(), 1);
+    assert_eq!(orgs[0].name, "Gzipped Org");
+}
+
+#[test]
+fn requests_without_session_key_are_rejected() {
+    let server = MockServer::start(claude_api_router(Arc::new(Mutex::new(vec![]))));
+    let provider =
+        claudesync::provider::ClaudeProvider::new(server.base_url(), String::new());
+
+    let err = provider.get_organizations().unwrap_err();
+    let msg = err.to_string();
+    assert!(msg.contains("401"), "expected a 401 error, got: {msg}");
 }
 
 #[test]
@@ -160,7 +198,7 @@ fn chat_conversations_listed_and_fetched() {
 
     let chat = provider.get_chat_conversation("org1", "chat1").unwrap();
     assert_eq!(chat["uuid"], "chat1");
-    assert_eq!(chat["messages"].as_array().unwrap().len(), 2);
+    assert_eq!(chat["chat_messages"].as_array().unwrap().len(), 2);
 
     let new_chat = provider.create_chat("org1", "New Chat", Some("proj1"), None).unwrap();
     assert_eq!(new_chat["uuid"], "new_chat");
