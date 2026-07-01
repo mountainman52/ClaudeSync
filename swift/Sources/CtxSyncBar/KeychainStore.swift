@@ -4,11 +4,13 @@ import Security
 /// Session key storage in the macOS Keychain.
 ///
 /// Uses the same generic-password item as the Rust CLI's keyring backend
-/// (service "claudesync", account = provider name, value = JSON payload with
+/// (service "ctxsync", account = provider name, value = JSON payload with
 /// `session_key` and `session_key_expiry`), so the CLI and this app share a
-/// single login.
+/// single login. Items stored under the pre-rename "claudesync" service are
+/// migrated on first read.
 enum KeychainStore {
-    static let service = "claudesync"
+    static let service = "ctxsync"
+    static let legacyService = "claudesync"
 
     struct SessionKey {
         let key: String
@@ -27,12 +29,36 @@ enum KeychainStore {
         }
     }
 
-    private static func baseQuery(account: String) -> [String: Any] {
+    private static func baseQuery(account: String,
+                                  service: String = KeychainStore.service) -> [String: Any] {
         [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
         ]
+    }
+
+    private static func readData(service: String, account: String) -> Data? {
+        var query = baseQuery(account: account, service: service)
+        query[kSecReturnData as String] = true
+        query[kSecMatchLimit as String] = kSecMatchLimitOne
+        var result: AnyObject?
+        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess else {
+            return nil
+        }
+        return result as? Data
+    }
+
+    /// If no item exists under the new service name, moves any item stored
+    /// under the legacy "claudesync" service to it. Best-effort.
+    private static func migrateLegacyItem(account: String) {
+        guard readData(service: service, account: account) == nil,
+              let legacyData = readData(service: legacyService, account: account) else { return }
+        var add = baseQuery(account: account)
+        add[kSecValueData as String] = legacyData
+        if SecItemAdd(add as CFDictionary, nil) == errSecSuccess {
+            SecItemDelete(baseQuery(account: account, service: legacyService) as CFDictionary)
+        }
     }
 
     static func save(account: String, sessionKey: String, expiry: Date) throws {
@@ -70,6 +96,7 @@ enum KeychainStore {
     }
 
     private static func fetch(account: String) throws -> SessionKey? {
+        migrateLegacyItem(account: account)
         var query = baseQuery(account: account)
         query[kSecReturnData as String] = true
         query[kSecMatchLimit as String] = kSecMatchLimitOne
@@ -93,6 +120,7 @@ enum KeychainStore {
 
     static func delete(account: String) {
         SecItemDelete(baseQuery(account: account) as CFDictionary)
+        SecItemDelete(baseQuery(account: account, service: legacyService) as CFDictionary)
     }
 }
 

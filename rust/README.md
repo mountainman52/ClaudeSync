@@ -1,7 +1,15 @@
-# ClaudeSync (Rust)
+# ctxsync (Rust)
 
-A Rust port of [ClaudeSync](https://github.com/jahwag/ClaudeSync), the CLI tool
+A Rust port of [ctxsync](https://github.com/jahwag/ctxsync), the CLI tool
 that synchronizes local files with [Claude.ai](https://claude.ai) Projects.
+
+> **Renamed:** this tool was formerly called ClaudeSync. Existing state is
+> migrated automatically: `~/.claudesync` is copied to `~/.ctxsync` on first
+> run, project-local `.claudesync` directories keep working, the macOS
+> Keychain item moves to the `ctxsync` service on first read, and
+> `ctxsync schedule --remove` also cleans up jobs installed under the old
+> name.
+
 
 The port mirrors the Python implementation feature-for-feature: same commands,
 same configuration files, and the same on-disk formats — so it can be used as a
@@ -12,7 +20,7 @@ drop-in replacement on a machine where the Python version was previously set up.
 ```bash
 cd rust
 cargo build --release
-# binary at target/release/claudesync
+# binary at target/release/ctxsync
 ```
 
 Install into your cargo bin directory:
@@ -25,30 +33,30 @@ cargo install --path rust
 
 | Command | Description |
 |---|---|
-| `claudesync auth login/logout/ls` | Manage session-key authentication |
-| `claudesync organization ls/set` | Select the active organization |
-| `claudesync project init/create/set/ls/archive/truncate` | Manage Claude.ai projects |
-| `claudesync project submodule ls/create` | Detect and manage submodule projects |
-| `claudesync project file ls` | List remote project files |
-| `claudesync push [--category --uberproject --dryrun]` | Sync local files to the remote project (`--dryrun` shows a new/changed/deleted diff) |
-| `claudesync watch [--interval N]` | Foreground auto-push: polls for changes and pushes when they appear |
-| `claudesync embedding` | Pack (and optionally compress) the project into a single text blob |
-| `claudesync chat pull/ls/rm/init/message` | Sync and manage chats and artifacts |
-| `claudesync session ls/create/archive` | Manage Claude Code web sessions |
-| `claudesync session environment ls`, `session branch ls` | List environments / connected repos |
-| `claudesync config set/get/ls`, `config category ...` | Manage configuration and file categories |
-| `claudesync schedule [--remove]` | Install (or remove) a periodic sync job — launchd on macOS, cron on other Unix |
-| `claudesync install-completion [shell]` | Print shell completion script |
+| `ctxsync auth login/logout/ls` | Manage session-key authentication |
+| `ctxsync organization ls/set` | Select the active organization |
+| `ctxsync project init/create/set/ls/archive/truncate` | Manage Claude.ai projects |
+| `ctxsync project submodule ls/create` | Detect and manage submodule projects |
+| `ctxsync project file ls` | List remote project files |
+| `ctxsync push [--category --uberproject --dryrun]` | Sync local files to the remote project (`--dryrun` shows a new/changed/deleted diff) |
+| `ctxsync watch [--interval N]` | Foreground auto-push: polls for changes and pushes when they appear |
+| `ctxsync embedding` | Pack (and optionally compress) the project into a single text blob |
+| `ctxsync chat pull/ls/rm/init/message` | Sync and manage chats and artifacts |
+| `ctxsync session ls/create/archive` | Manage Claude Code web sessions |
+| `ctxsync session environment ls`, `session branch ls` | List environments / connected repos |
+| `ctxsync config set/get/ls`, `config category ...` | Manage configuration and file categories |
+| `ctxsync schedule [--remove]` | Install (or remove) a periodic sync job — launchd on macOS, cron on other Unix |
+| `ctxsync install-completion [shell]` | Print shell completion script |
 
 ### macOS notes
 
-- **Session keys are stored in the macOS Keychain** (service `claudesync`)
+- **Session keys are stored in the macOS Keychain** (service `ctxsync`)
   by default — encrypted at rest by the OS, unlocked with your login
   session, and access-controlled per application. This replaces the file
   scheme, whose encryption key is derived from your SSH private key with a
   fixed salt (little real protection from anyone who can already read your
   home directory). Behavior of `session_key_storage` (set via
-  `claudesync config set session_key_storage <value>`):
+  `ctxsync config set session_key_storage <value>`):
   - `auto` (default): Keychain on macOS, file elsewhere. Reads fall back to
     an existing file key, so you stay logged in after upgrading; the next
     `auth login` writes to the Keychain and removes the file copy.
@@ -58,30 +66,30 @@ cargo install --path rust
   macOS may prompt to allow keychain access the first time a newly built
   binary reads the key — choose "Always Allow". `auth logout` clears both
   stores.
-- `claudesync auth login --from-clipboard` reads the session key straight
+- `ctxsync auth login --from-clipboard` reads the session key straight
   from the clipboard (`pbpaste`) after you copy it from the browser's
   developer tools.
-- `claudesync schedule` installs a launchd agent
-  (`~/Library/LaunchAgents/com.claudesync.push.plist`) instead of a cron
-  entry; output goes to `~/Library/Logs/claudesync.log`. Remove it with
-  `claudesync schedule --remove`. The job runs `push` in the project
+- `ctxsync schedule` installs a launchd agent
+  (`~/Library/LaunchAgents/com.ctxsync.push.plist`) instead of a cron
+  entry; output goes to `~/Library/Logs/ctxsync.log`. Remove it with
+  `ctxsync schedule --remove`. The job runs `push` in the project
   directory you scheduled from.
 - For a session-scoped alternative that needs no scheduler at all, run
-  `claudesync watch` in a terminal tab.
+  `ctxsync watch` in a terminal tab.
 
 ## Compatibility with the Python version
 
-- **Configuration**: reads/writes the same `~/.claudesync/config.json` and
-  `<project>/.claudesync/config.local.json` files.
+- **Configuration**: reads/writes the same `~/.ctxsync/config.json` and
+  `<project>/.ctxsync/config.local.json` files.
 - **Session keys**: on macOS they are stored in the **Keychain** by default
   (see below). With `session_key_storage = "file"` (the default elsewhere),
-  keys live in `~/.claudesync/claude.ai.key`, encrypted with a Fernet key
+  keys live in `~/.ctxsync/claude.ai.key`, encrypted with a Fernet key
   derived from your SSH private key via PBKDF2-HMAC-SHA256 with the same salt
   and iteration count as the Python version — file-stored keys written by one
   implementation can be read by the other.
 - **File filtering**: honors `.gitignore`, `.claudeignore`, file categories,
   the `max_file_size` limit, and the text-file heuristic, with the same
-  excluded directories (`.git`, `claude_chats`, `.claudesync`, ...).
+  excluded directories (`.git`, `claude_chats`, `.ctxsync`, ...).
 - **Compression**: all algorithms are supported (`zlib`, `bz2`, `lzma`,
   `brotli`, `dictionary`, `rle`, `huffman`, `lzw`, `pack`, `none`).
 
@@ -114,19 +122,19 @@ Fixes for upstream flaws (deliberate divergences from the Python behavior):
 
 Additions beyond the Python feature set:
 
-- `claudesync watch` — foreground polling auto-push.
-- `claudesync schedule` uses launchd on macOS, supports `--remove` on all
+- `ctxsync watch` — foreground polling auto-push.
+- `ctxsync schedule` uses launchd on macOS, supports `--remove` on all
   platforms, and anchors the scheduled job to the project directory (the
   Python cron entry ran in `$HOME`, where no project would be found).
-- `claudesync auth login --from-clipboard` (macOS `pbpaste`).
+- `ctxsync auth login --from-clipboard` (macOS `pbpaste`).
 - `push --dryrun` prints a diff (new/changed/would-delete/unchanged) instead
   of only listing local files.
 
 Other differences:
 
-- `claudesync schedule` installs the cron entry to run `claudesync push`
-  (the Python version wrote `claudesync sync`, a command that does not exist).
-- `claudesync upgrade` prints upgrade instructions instead of self-upgrading
+- `ctxsync schedule` installs the cron entry to run `ctxsync push`
+  (the Python version wrote `ctxsync sync`, a command that does not exist).
+- `ctxsync upgrade` prints upgrade instructions instead of self-upgrading
   via pip.
 - `install-completion` prints the clap-generated completion script to stdout
   rather than editing shell rc files.
@@ -169,7 +177,7 @@ at it (log in with any key starting with `sk-ant`):
 
 ```bash
 cargo run --example mock_server -- 8000      # from the rust/ directory
-claudesync config set claude_api_url http://127.0.0.1:8000/api
+ctxsync config set claude_api_url http://127.0.0.1:8000/api
 ```
 
 Source layout mirrors the Python package:

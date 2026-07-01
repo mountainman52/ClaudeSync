@@ -2,7 +2,7 @@ import json
 import os
 
 import click
-from claudesync.exceptions import ProviderError
+from ctxsync.exceptions import ProviderError
 from ..utils import (
     handle_errors,
     validate_and_get_provider,
@@ -25,7 +25,7 @@ def ls(config):
     if not local_path:
         click.echo(
             "No local project path found. Please select an existing project or create a new one using "
-            "'claudesync project select' or 'claudesync project create'."
+            "'ctxsync project select' or 'ctxsync project create'."
         )
         return
 
@@ -54,7 +54,7 @@ def create(config):
     if not local_path:
         click.echo(
             "No local project path found. Please select an existing project or create a new one using "
-            "'claudesync project select' or 'claudesync project create'."
+            "'ctxsync project select' or 'ctxsync project create'."
         )
         return
 
@@ -75,7 +75,8 @@ def create(config):
     )
 
     # Load existing local config
-    local_config_path = os.path.join(local_path, ".claudesync", "config.local.json")
+    dir_name = getattr(config, "local_dir_name", None) or ".ctxsync"
+    local_config_path = os.path.join(local_path, dir_name, "config.local.json")
     with open(local_config_path, "r") as f:
         local_config = json.load(f)
 

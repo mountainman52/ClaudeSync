@@ -2,8 +2,8 @@ import unittest
 import threading
 import time
 from click.testing import CliRunner
-from claudesync.cli.main import cli
-from claudesync.configmanager import InMemoryConfigManager
+from ctxsync.cli.main import cli
+from ctxsync.configmanager import InMemoryConfigManager
 from mock_http_server import run_mock_server
 
 

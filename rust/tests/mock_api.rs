@@ -9,8 +9,8 @@ use std::sync::{Arc, Mutex};
 
 use serde_json::{json, Value};
 
-use claudesync::sync::{retry_on_403, SyncManager};
-use claudesync::utils::compute_md5_hash;
+use ctxsync::sync::{retry_on_403, SyncManager};
+use ctxsync::utils::compute_md5_hash;
 use common::{claude_api_router, provider_for, MockServer, Request, Response};
 
 #[test]
@@ -158,7 +158,7 @@ fn gzip_responses_are_decompressed() {
 fn requests_without_session_key_are_rejected() {
     let server = MockServer::start(claude_api_router(Arc::new(Mutex::new(vec![]))));
     let provider =
-        claudesync::provider::ClaudeProvider::new(server.base_url(), String::new());
+        ctxsync::provider::ClaudeProvider::new(server.base_url(), String::new());
 
     let err = provider.get_organizations().unwrap_err();
     let msg = err.to_string();

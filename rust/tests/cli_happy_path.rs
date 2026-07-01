@@ -1,4 +1,4 @@
-//! End-to-end happy path driving the actual `claudesync` binary against the
+//! End-to-end happy path driving the actual `ctxsync` binary against the
 //! mock API (port of tests/test_happy_path.py and test_chat_happy_path.py).
 //!
 //! The binary runs with HOME pointed at a temp directory (isolating global
@@ -58,13 +58,13 @@ impl CliEnv {
             self.fakebin.path().display(),
             std::env::var("PATH").unwrap_or_default()
         );
-        let output = Command::new(env!("CARGO_BIN_EXE_claudesync"))
+        let output = Command::new(env!("CARGO_BIN_EXE_ctxsync"))
             .args(args)
             .current_dir(cwd)
             .env("HOME", self.home.path())
             .env("PATH", path)
             .output()
-            .expect("run claudesync binary");
+            .expect("run ctxsync binary");
         let combined = format!(
             "{}{}",
             String::from_utf8_lossy(&output.stdout),
@@ -114,8 +114,8 @@ fn cli_happy_path_login_init_push_and_chat() {
     let out = env.run_ok(&proj, &["auth", "ls"]);
     assert!(out.contains("claude.ai"), "{out}");
 
-    // Create the local .claudesync dir so subsequent settings persist
-    std::fs::create_dir(proj.join(".claudesync")).unwrap();
+    // Create the local .ctxsync dir so subsequent settings persist
+    std::fs::create_dir(proj.join(".ctxsync")).unwrap();
 
     // Step 2: set organization
     let out = env.run_ok(&proj, &["organization", "set", "--org-id", "org1"]);

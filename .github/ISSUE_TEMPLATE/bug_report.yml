@@ -1,14 +1,14 @@
-name: ClaudeSync Bug Report
-description: Report a bug in ClaudeSync.
+name: ctxsync Bug Report
+description: Report a bug in ctxsync.
 labels: ["bug"]
-projects: ["claudesync/bugs"]
+projects: ["ctxsync/bugs"]
 assignees:
-  - claudesync-team
+  - ctxsync-team
 body:
   - type: markdown
     attributes:
       value: |
-        ### 🐞 ClaudeSync Bug Report
+        ### 🐞 ctxsync Bug Report
 
         Thank you for taking the time to report a bug. Please fill out the following information to help us resolve the issue.
 
@@ -31,10 +31,10 @@ body:
       required: true
 
   - type: input
-    id: claudesync_version
+    id: ctxsync_version
     attributes:
-      label: ClaudeSync Version
-      description: E.g. as given by `pip show claudesync | grep Version`
+      label: ctxsync Version
+      description: E.g. as given by `pip show ctxsync | grep Version`
       placeholder: e.g., 0.6.0
     validations:
       required: true
@@ -43,7 +43,7 @@ body:
     id: installation_type
     attributes:
       label: Installation Type
-      description: Is this a new installation or an upgrade from an older version of ClaudeSync?
+      description: Is this a new installation or an upgrade from an older version of ctxsync?
       options:
         - New
         - Upgraded
@@ -55,10 +55,10 @@ body:
     id: configuration
     attributes:
       label: Configuration
-      description: Output of `claudesync config ls`. *(Please remove any sensitive information)*
+      description: Output of `ctxsync config ls`. *(Please remove any sensitive information)*
       placeholder: |
         ```bash
-        claudesync config ls
+        ctxsync config ls
         # Paste configuration here
         ```
     validations:
@@ -92,7 +92,7 @@ body:
       description: Optional. Paste relevant logs here.
       placeholder: |
         ```bash
-        claudesync config set log_level DEBUG
+        ctxsync config set log_level DEBUG
         # Paste logs here
         ```
       render: shell

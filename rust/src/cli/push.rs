@@ -40,8 +40,8 @@ pub fn push(
         Some(p) => p,
         None => {
             println!(
-                "No .claudesync directory found in this directory or any parent directories. \
-                 Please run 'claudesync project create' or 'claudesync project set' first."
+                "No .ctxsync (or legacy .claudesync) directory found in this directory or any parent directories. \
+                 Please run 'ctxsync project create' or 'ctxsync project set' first."
             );
             return Ok(());
         }
@@ -159,8 +159,8 @@ pub fn watch(
         Some(p) => p,
         None => {
             println!(
-                "No .claudesync directory found in this directory or any parent directories. \
-                 Please run 'claudesync project create' or 'claudesync project set' first."
+                "No .ctxsync (or legacy .claudesync) directory found in this directory or any parent directories. \
+                 Please run 'ctxsync project create' or 'ctxsync project set' first."
             );
             return Ok(());
         }
@@ -238,8 +238,8 @@ pub fn embedding(config: &FileConfig, category: Option<String>, uberproject: boo
         Some(p) => p,
         None => {
             println!(
-                "No .claudesync directory found in this directory or any parent directories. \
-                 Please run 'claudesync project create' or 'claudesync project set' first."
+                "No .ctxsync (or legacy .claudesync) directory found in this directory or any parent directories. \
+                 Please run 'ctxsync project create' or 'ctxsync project set' first."
             );
             return Ok(());
         }

@@ -1,22 +1,30 @@
 import json
 import os
+import shutil
 from datetime import datetime
 from pathlib import Path
 import logging
 
-from claudesync.configmanager.base_config_manager import BaseConfigManager
-from claudesync.session_key_manager import SessionKeyManager
+from ctxsync.configmanager.base_config_manager import BaseConfigManager
+from ctxsync.session_key_manager import SessionKeyManager
 
 
 class FileConfigManager(BaseConfigManager):
     """
-    Manages the configuration for ClaudeSync, handling both global and local (project-specific) settings.
+    Manages the configuration for ctxsync, handling both global and local (project-specific) settings.
 
     This class provides methods to load, save, and access configuration settings from both
-    a global configuration file (~/.claudesync/config.json) and a local configuration file
-    (.claudesync/config.local.json) in the project directory. Session keys are stored separately
+    a global configuration file (~/.ctxsync/config.json) and a local configuration file
+    (.ctxsync/config.local.json) in the project directory. Session keys are stored separately
     in provider-specific files.
+
+    Configuration from the tool's former name (ClaudeSync) is honored: the
+    global ~/.claudesync directory is copied to ~/.ctxsync on first run, and
+    project-local .claudesync directories keep working as-is.
     """
+
+    LOCAL_DIR_NAME = ".ctxsync"
+    LEGACY_LOCAL_DIR_NAME = ".claudesync"
 
     def __init__(self):
         """
@@ -25,12 +33,28 @@ class FileConfigManager(BaseConfigManager):
         Sets up paths for global and local configuration files and loads both configurations.
         """
         super().__init__()
-        self.global_config_dir = Path.home() / ".claudesync"
+        self.global_config_dir = Path.home() / self.LOCAL_DIR_NAME
+        self._migrate_legacy_global_config()
         self.global_config_file = self.global_config_dir / "config.json"
         self.global_config = self._load_global_config()
         self.local_config = {}
         self.local_config_dir = None
+        self.local_dir_name = self.LOCAL_DIR_NAME
         self._load_local_config()
+
+    def _migrate_legacy_global_config(self):
+        """
+        Copies ~/.claudesync to ~/.ctxsync on first run after the rename, so
+        existing configuration and encrypted session keys keep working.
+        """
+        legacy_dir = Path.home() / self.LEGACY_LOCAL_DIR_NAME
+        if not self.global_config_dir.exists() and legacy_dir.is_dir():
+            try:
+                shutil.copytree(legacy_dir, self.global_config_dir)
+            except OSError as e:
+                logging.warning(
+                    f"Could not migrate legacy config from {legacy_dir}: {e}"
+                )
 
     def _load_global_config(self):
         """
@@ -56,13 +80,14 @@ class FileConfigManager(BaseConfigManager):
 
     def _find_local_config_dir(self, max_depth=100):
         """
-        Finds the nearest directory containing a .claudesync folder.
+        Finds the nearest directory containing a .ctxsync folder (or a legacy
+        .claudesync folder, which keeps working after the rename).
 
-        Searches from the current working directory upwards until it finds a .claudesync folder
-        or reaches the root directory. Excludes the ~/.claudesync directory.
+        Searches from the current working directory upwards until it finds one
+        or reaches the root directory. Excludes the home-level config directories.
 
         Returns:
-            Path: The path containing the .claudesync folder, or None if not found.
+            Path: The path containing the config folder, or None if not found.
         """
         current_dir = Path.cwd()
         root_dir = Path(current_dir.root)
@@ -70,9 +95,11 @@ class FileConfigManager(BaseConfigManager):
         depth = 0
 
         while current_dir != root_dir:
-            claudesync_dir = current_dir / ".claudesync"
-            if claudesync_dir.is_dir() and claudesync_dir != home_dir / ".claudesync":
-                return current_dir
+            for dir_name in (self.LOCAL_DIR_NAME, self.LEGACY_LOCAL_DIR_NAME):
+                config_dir = current_dir / dir_name
+                if config_dir.is_dir() and config_dir != home_dir / dir_name:
+                    self.local_dir_name = dir_name
+                    return current_dir
 
             current_dir = current_dir.parent
             depth += 1
@@ -84,13 +111,14 @@ class FileConfigManager(BaseConfigManager):
 
     def _load_local_config(self):
         """
-        Loads the local configuration from the nearest .claudesync/config.local.json file.
+        Loads the local configuration from the nearest .ctxsync/config.local.json
+        (or legacy .claudesync/config.local.json) file.
         Automatically normalizes any Windows-style paths.
         """
         self.local_config_dir = self._find_local_config_dir()
         if self.local_config_dir:
             local_config_file = (
-                self.local_config_dir / ".claudesync" / "config.local.json"
+                self.local_config_dir / self.local_dir_name / "config.local.json"
             )
             if local_config_file.exists():
                 with open(local_config_file, "r") as f:
@@ -111,10 +139,11 @@ class FileConfigManager(BaseConfigManager):
 
     def get_local_path(self):
         """
-        Retrieves the path of the directory containing the .claudesync folder.
+        Retrieves the path of the directory containing the .ctxsync folder.
 
         Returns:
-            str: The path of the directory containing the .claudesync folder, or None if not found.
+            str: The path of the directory containing the .ctxsync (or legacy
+            .claudesync) folder, or None if not found.
         """
         return str(self.local_config_dir) if self.local_config_dir else None
 
@@ -146,8 +175,9 @@ class FileConfigManager(BaseConfigManager):
             # Update local_config_dir when setting local_path
             if key == "local_path":
                 self.local_config_dir = Path(value)
-                # Create .claudesync directory in the specified path
-                (self.local_config_dir / ".claudesync").mkdir(exist_ok=True)
+                # New projects always get a .ctxsync directory
+                self.local_dir_name = self.LOCAL_DIR_NAME
+                (self.local_config_dir / self.local_dir_name).mkdir(exist_ok=True)
 
             self.local_config[key] = value
             self._save_local_config()
@@ -167,11 +197,12 @@ class FileConfigManager(BaseConfigManager):
 
     def _save_local_config(self):
         """
-        Saves the current local configuration to the .claudesync/config.local.json file.
+        Saves the current local configuration to the discovered config
+        directory (.ctxsync, or a legacy .claudesync that keeps working).
         """
         if self.local_config_dir:
             local_config_file = (
-                self.local_config_dir / ".claudesync" / "config.local.json"
+                self.local_config_dir / self.local_dir_name / "config.local.json"
             )
             local_config_file.parent.mkdir(exist_ok=True)
             with open(local_config_file, "w") as f:

@@ -31,7 +31,7 @@ def ls(config):
     "--provider",
     type=click.Choice(["claude.ai"]),  # Add more providers as they become available
     default="claude.ai",
-    help="Specify the provider for repositories without .claudesync",
+    help="Specify the provider for repositories without .ctxsync",
 )
 @click.pass_context
 @handle_errors

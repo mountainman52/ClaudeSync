@@ -3,12 +3,12 @@ import time
 import unittest
 from click.testing import CliRunner
 from unittest.mock import patch
-from claudesync.cli.main import cli
-from claudesync.configmanager import InMemoryConfigManager
+from ctxsync.cli.main import cli
+from ctxsync.configmanager import InMemoryConfigManager
 from mock_http_server import run_mock_server
 
 
-class TestClaudeSyncHappyPath(unittest.TestCase):
+class TestCtxSyncHappyPath(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
@@ -24,7 +24,7 @@ class TestClaudeSyncHappyPath(unittest.TestCase):
             "claude_api_url", "http://127.0.0.1:8000/api"
         )  # Set BASE_URL for the mock server
 
-    @patch("claudesync.utils.get_local_files")
+    @patch("ctxsync.utils.get_local_files")
     def test_happy_path(self, mock_get_local_files):
         # Mock the API calls
         mock_get_local_files.return_value = {"test.txt": "content_hash"}

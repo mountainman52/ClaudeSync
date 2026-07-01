@@ -24,7 +24,7 @@ pub fn ls(config: &FileConfig) -> Result<()> {
         None => {
             println!(
                 "No local project path found. Please select an existing project or create a new one using \
-                 'claudesync project select' or 'claudesync project create'."
+                 'ctxsync project select' or 'ctxsync project create'."
             );
             return Ok(());
         }
@@ -55,7 +55,7 @@ pub fn create(config: &FileConfig) -> Result<()> {
         None => {
             println!(
                 "No local project path found. Please select an existing project or create a new one using \
-                 'claudesync project select' or 'claudesync project create'."
+                 'ctxsync project select' or 'ctxsync project create'."
             );
             return Ok(());
         }
@@ -74,7 +74,9 @@ pub fn create(config: &FileConfig) -> Result<()> {
         submodules_with_files.len()
     );
 
-    let local_config_path = local_path.join(".claudesync").join("config.local.json");
+    let local_config_path = local_path
+        .join(config.local_dir_name)
+        .join("config.local.json");
     let mut local_config: Value =
         serde_json::from_str(&fs::read_to_string(&local_config_path)?)?;
     if local_config.get("submodules").is_none() {

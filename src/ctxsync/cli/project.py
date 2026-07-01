@@ -29,7 +29,7 @@ def project():
 )
 @click.option(
     "--description",
-    default="Project created with ClaudeSync",
+    default="Project created with ctxsync",
     prompt="Enter the project description",
     help="The project description",
     show_default=True,
@@ -59,14 +59,14 @@ def init(ctx, name, description, local_path, new, provider):
     """Initialize a new project configuration.
 
     If --new is specified, also creates a remote project on Claude.ai.
-    Otherwise, only creates the local configuration. Use 'claudesync organization set'
-    and 'claudesync project set' to link to an existing remote project."""
+    Otherwise, only creates the local configuration. Use 'ctxsync organization set'
+    and 'ctxsync project set' to link to an existing remote project."""
 
     config = ctx.obj
 
-    # Create .claudesync directory and save initial config
-    claudesync_dir = os.path.join(local_path, ".claudesync")
-    os.makedirs(claudesync_dir, exist_ok=True)
+    # Create .ctxsync directory and save initial config
+    ctxsync_dir = os.path.join(local_path, ".ctxsync")
+    os.makedirs(ctxsync_dir, exist_ok=True)
 
     # Set basic configuration
     config.set("active_provider", provider, local=True)
@@ -100,7 +100,7 @@ def init(ctx, name, description, local_path, new, provider):
             click.echo("\nProject created:")
             click.echo(f"  - Project location: {local_path}")
             click.echo(
-                f"  - Project config location: {os.path.join(claudesync_dir, 'config.local.json')}"
+                f"  - Project config location: {os.path.join(ctxsync_dir, 'config.local.json')}"
             )
             click.echo(
                 f"  - Remote URL: https://claude.ai/project/{new_project['uuid']}"
@@ -114,11 +114,11 @@ def init(ctx, name, description, local_path, new, provider):
         click.echo("\nLocal project configuration created:")
         click.echo(f"  - Project location: {local_path}")
         click.echo(
-            f"  - Project config location: {os.path.join(claudesync_dir, 'config.local.json')}"
+            f"  - Project config location: {os.path.join(ctxsync_dir, 'config.local.json')}"
         )
         click.echo("\nTo link to a remote project:")
-        click.echo("1. Run 'claudesync organization set' to select an organization")
-        click.echo("2. Run 'claudesync project set' to select an existing project")
+        click.echo("1. Run 'ctxsync organization set' to select an organization")
+        click.echo("2. Run 'ctxsync project set' to select an existing project")
 
 
 @project.command()
@@ -191,10 +191,12 @@ def _save_project_selection(config, selected_project):
         f"Selected project: {selected_project['name']} (ID: {selected_project['id']})"
     )
 
-    # Create .claudesync directory in the current working directory if it doesn't exist
-    os.makedirs(".claudesync", exist_ok=True)
-    claudesync_dir = os.path.abspath(".claudesync")
-    config_file_path = os.path.join(claudesync_dir, "config.local.json")
+    # Create the config directory in the current working directory if it
+    # doesn't exist, honoring a legacy .claudesync dir that was discovered.
+    dir_name = getattr(config, "local_dir_name", None) or ".ctxsync"
+    os.makedirs(dir_name, exist_ok=True)
+    ctxsync_dir = os.path.abspath(dir_name)
+    config_file_path = os.path.join(ctxsync_dir, "config.local.json")
     config._save_local_config()
 
     click.echo("\nProject created:")
@@ -236,7 +238,7 @@ def single_project_archival(projects, yes, provider, active_organization_id):
     "--provider",
     type=click.Choice(["claude.ai"]),  # Add more providers as they become available
     default="claude.ai",
-    help="Specify the provider for repositories without .claudesync",
+    help="Specify the provider for repositories without .ctxsync",
 )
 @click.pass_context
 @handle_errors

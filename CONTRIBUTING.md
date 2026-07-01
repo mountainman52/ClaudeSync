@@ -1,13 +1,13 @@
-# Contributing to ClaudeSync
+# Contributing to ctxsync
 
-We're excited that you're interested in contributing to ClaudeSync! This document outlines the process for contributing to this project.
+We're excited that you're interested in contributing to ctxsync! This document outlines the process for contributing to this project.
 
 ## Getting Started
 
 1. Fork the repository on GitHub.
 2. Clone your fork locally:
    ```
-   git clone https://github.com/your-username/claudesync.git
+   git clone https://github.com/your-username/ctxsync.git
    ```
 3. Create a new branch for your feature or bug fix:
    ```
@@ -106,7 +106,7 @@ Before submitting a pull request, confirm all of the following:
 
 If you find a bug, please open an issue on the GitHub repository using our bug report template. To do this:
 
-1. Go to the [Issues](https://github.com/jahwag/claudesync/issues) page of the ClaudeSync repository.
+1. Go to the [Issues](https://github.com/jahwag/ctxsync/issues) page of the ctxsync repository.
 2. Click on "New Issue".
 3. Select the "Bug Report" template.
 4. Fill out the template with as much detail as possible.
@@ -117,9 +117,9 @@ When reporting a bug, please include:
 - Steps to reproduce the behavior
 - Expected behavior
 - Any error messages or stack traces
-- Your environment details (OS, Python version, ClaudeSync version)
-- Your ClaudeSync configuration (use `claudesync config list`)
-- Any relevant logs (you can increase log verbosity with `claudesync config set log_level DEBUG`)
+- Your environment details (OS, Python version, ctxsync version)
+- Your ctxsync configuration (use `ctxsync config list`)
+- Any relevant logs (you can increase log verbosity with `ctxsync config set log_level DEBUG`)
 
 The more information you provide, the easier it will be for us to reproduce and fix the bug.
 
@@ -131,4 +131,4 @@ If you have an idea for a new feature, please open an issue on the GitHub reposi
 
 If you have any questions about contributing, feel free to open an issue for discussion.
 
-Thank you for your interest in improving ClaudeSync!
+Thank you for your interest in improving ctxsync!

@@ -4,9 +4,9 @@ import time
 from unittest.mock import patch
 from datetime import datetime
 
-from claudesync.configmanager import InMemoryConfigManager
-from claudesync.providers.claude_ai import ClaudeAIProvider
-from claudesync.exceptions import ProviderError
+from ctxsync.configmanager import InMemoryConfigManager
+from ctxsync.providers.claude_ai import ClaudeAIProvider
+from ctxsync.exceptions import ProviderError
 from mock_http_server import run_mock_server
 
 

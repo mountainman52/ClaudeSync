@@ -8,10 +8,10 @@ import subprocess
 import urllib.request
 import importlib.metadata
 
-from claudesync.cli.chat import chat
-from claudesync.configmanager import FileConfigManager, InMemoryConfigManager
-from claudesync.syncmanager import SyncManager
-from claudesync.utils import (
+from ctxsync.cli.chat import chat
+from ctxsync.configmanager import FileConfigManager, InMemoryConfigManager
+from ctxsync.syncmanager import SyncManager
+from ctxsync.utils import (
     handle_errors,
     validate_and_get_provider,
     get_local_files,
@@ -34,7 +34,7 @@ click_completion.init()
 @click.group()
 @click.pass_context
 def cli(ctx):
-    """ClaudeSync: Synchronize local files with AI projects."""
+    """ctxsync: Synchronize local files with AI projects."""
     if ctx.obj is None:
         ctx.obj = FileConfigManager()  # InMemoryConfigManager() for testing with mock
 
@@ -55,44 +55,44 @@ def install_completion(shell):
 @cli.command()
 @click.pass_context
 def upgrade(ctx):
-    """Upgrade ClaudeSync to the latest version and reset configuration, preserving sessionKey."""
-    current_version = importlib.metadata.version("claudesync")
+    """Upgrade ctxsync to the latest version and reset configuration, preserving sessionKey."""
+    current_version = importlib.metadata.version("ctxsync")
 
     # Check for the latest version
     try:
         with urllib.request.urlopen(
-            "https://pypi.org/pypi/claudesync/json"
+            "https://pypi.org/pypi/ctxsync/json"
         ) as response:
             data = json.loads(response.read())
             latest_version = data["info"]["version"]
 
         if current_version == latest_version:
             click.echo(
-                f"You are already on the latest version of ClaudeSync (v{current_version})."
+                f"You are already on the latest version of ctxsync (v{current_version})."
             )
             return
     except Exception as e:
         click.echo(f"Unable to check for the latest version: {str(e)}")
         click.echo("Proceeding with the upgrade process.")
 
-    # Upgrade ClaudeSync
-    click.echo(f"Upgrading ClaudeSync from v{current_version} to v{latest_version}...")
+    # Upgrade ctxsync
+    click.echo(f"Upgrading ctxsync from v{current_version} to v{latest_version}...")
     try:
-        subprocess.run(["pip", "install", "--upgrade", "claudesync"], check=True)
-        click.echo("ClaudeSync has been successfully upgraded.")
+        subprocess.run(["pip", "install", "--upgrade", "ctxsync"], check=True)
+        click.echo("ctxsync has been successfully upgraded.")
     except subprocess.CalledProcessError:
         click.echo(
-            "Failed to upgrade ClaudeSync. Please try manually: pip install --upgrade claudesync"
+            "Failed to upgrade ctxsync. Please try manually: pip install --upgrade ctxsync"
         )
 
     # Inform user about the upgrade process
     click.echo("\nUpgrade process completed:")
     click.echo(
-        f"1. ClaudeSync has been upgraded from v{current_version} to v{latest_version}."
+        f"1. ctxsync has been upgraded from v{current_version} to v{latest_version}."
     )
     click.echo("2. Your session key has been preserved (if it existed and was valid).")
     click.echo(
-        "\nPlease run 'claudesync auth login' to complete your configuration setup if needed."
+        "\nPlease run 'ctxsync auth login' to complete your configuration setup if needed."
     )
 
 
@@ -122,8 +122,8 @@ def push(config, category, uberproject, dryrun):
 
     if not local_path:
         click.echo(
-            "No .claudesync directory found in this directory or any parent directories. "
-            "Please run 'claudesync project create' or 'claudesync project set' first."
+            "No .ctxsync (or legacy .claudesync) directory found in this directory or any parent directories. "
+            "Please run 'ctxsync project create' or 'ctxsync project set' first."
         )
         return
 
@@ -224,8 +224,8 @@ def embedding(config, category, uberproject):
 
     if not local_path:
         click.echo(
-            "No .claudesync directory found in this directory or any parent directories. "
-            "Please run 'claudesync project create' or 'claudesync project set' first."
+            "No .ctxsync (or legacy .claudesync) directory found in this directory or any parent directories. "
+            "Please run 'ctxsync project create' or 'ctxsync project set' first."
         )
         return
 

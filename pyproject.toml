@@ -1,5 +1,5 @@
 [project]
-name = "claudesync"
+name = "ctxsync"
 version = "0.7.6"
 authors = [
     {name = "Jahziah Wagner", email = "540380+jahwag@users.noreply.github.com"},
@@ -54,11 +54,11 @@ test = [
 ]
 
 [project.urls]
-"Homepage" = "https://github.com/jahwag/claudesync"
-"Bug Tracker" = "https://github.com/jahwag/claudesync/issues"
+"Homepage" = "https://github.com/jahwag/ctxsync"
+"Bug Tracker" = "https://github.com/jahwag/ctxsync/issues"
 
 [project.scripts]
-claudesync = "claudesync.cli.main:cli"
+ctxsync = "ctxsync.cli.main:cli"
 
 [build-system]
 requires = ["setuptools>=42", "wheel"]
@@ -66,9 +66,9 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["claudesync*"]
+include = ["ctxsync*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = "test_*.py"
-addopts = "-v --cov=claudesync --cov-report=term-missing"
+addopts = "-v --cov=ctxsync --cov-report=term-missing"

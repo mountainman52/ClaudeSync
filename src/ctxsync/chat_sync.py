@@ -29,7 +29,7 @@ def sync_chats(provider, config, sync_all=False):
     local_path = config.get("local_path")
     if not local_path:
         raise ConfigurationError(
-            "Local path not set. Use 'claudesync project set' or 'claudesync project create' to set it."
+            "Local path not set. Use 'ctxsync project set' or 'ctxsync project create' to set it."
         )
 
     # Create chats directory within local_path

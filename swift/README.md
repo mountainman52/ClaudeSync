@@ -1,9 +1,14 @@
-# ClaudeSync Menu Bar App (Swift)
+# ctxsync Menu Bar App (Swift)
 
-A native macOS menu bar companion for ClaudeSync: log in once, pick a
+A native macOS menu bar companion for ctxsync: log in once, pick a
 Claude.ai project and a local folder, then sync manually or automatically
 whenever files change. Built with SwiftUI (`MenuBarExtra`), FSEvents, and the
 Keychain — no Electron, no daemon, ~1,400 lines of Swift.
+
+> **Renamed:** formerly the ClaudeSync menu bar app. The app migrates the
+> global config dir and the Keychain item to the new names automatically and
+> keeps honoring project-local `.claudesync` directories.
+
 
 > **Status:** authored without access to a macOS toolchain (developed in a
 > Linux container), so it has not been compile-tested. The code sticks to
@@ -39,10 +44,10 @@ Keychain — no Electron, no daemon, ~1,400 lines of Swift.
 The app reads and writes the **same state** as the Rust CLI (and the original
 Python tool):
 
-- `~/.claudesync/config.json` and `<project>/.claudesync/config.local.json` —
-  a project configured in the app works with `claudesync push`, and vice versa.
+- `~/.ctxsync/config.json` and `<project>/.ctxsync/config.local.json` —
+  a project configured in the app works with `ctxsync push`, and vice versa.
 - The session key lives in the **same Keychain item** the Rust CLI uses
-  (service `claudesync`, account `claude.ai`, identical JSON payload), so
+  (service `ctxsync`, account `claude.ai`, identical JSON payload), so
   logging in once covers both. macOS will ask permission the first time each
   binary touches the item — "Always Allow".
 
@@ -65,8 +70,8 @@ For a proper installable app (menu-bar-only, supports launch-at-login):
 
 ```bash
 ./make-app.sh
-mv ClaudeSync.app /Applications/
-open /Applications/ClaudeSync.app
+mv CtxSync.app /Applications/
+open /Applications/CtxSync.app
 ```
 
 ## First-run flow

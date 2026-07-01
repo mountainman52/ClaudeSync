@@ -66,7 +66,7 @@ class SessionKeyManager:
             "  be sure to name your key 'id_ed25519' or 'id_ecdsa' so it's found automatically."
         )
         self.logger.warning(
-            "* Or set ssh_key_path with the full key name in your .claudesync/config.local.json"
+            "* Or set ssh_key_path with the full key name in your .ctxsync/config.local.json"
         )
         return input("Enter the full path to your new Ed25519 private key: ")
 
@@ -98,7 +98,7 @@ class SessionKeyManager:
         kdf = PBKDF2HMAC(
             algorithm=hashes.SHA256(),
             length=32,
-            salt=b"claudesync",  # Using a fixed salt; consider using a secure random salt in production
+            salt=b"claudesync",  # Fixed salt kept from the ClaudeSync days: changing it would orphan existing encrypted keys
             iterations=100000,
         )
         key = base64.urlsafe_b64encode(kdf.derive(ssh_key_data))

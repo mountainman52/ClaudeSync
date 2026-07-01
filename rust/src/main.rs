@@ -1,13 +1,13 @@
 use clap::{CommandFactory, Parser, Subcommand, ValueEnum};
 use clap_complete::Shell;
 
-use claudesync::cli;
-use claudesync::config::FileConfig;
-use claudesync::error::Result;
+use ctxsync::cli;
+use ctxsync::config::FileConfig;
+use ctxsync::error::Result;
 
-/// ClaudeSync: Synchronize local files with AI projects.
+/// ctxsync: Synchronize local files with AI projects.
 #[derive(Parser)]
-#[command(name = "claudesync", version, about = "ClaudeSync: Synchronize local files with AI projects.")]
+#[command(name = "ctxsync", version, about = "ctxsync: Synchronize local files with AI projects.")]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -42,7 +42,7 @@ enum Commands {
         #[command(subcommand)]
         command: ProjectCommands,
     },
-    /// Manage claudesync configuration
+    /// Manage ctxsync configuration
     Config {
         #[command(subcommand)]
         command: ConfigCommands,
@@ -99,7 +99,7 @@ enum Commands {
         #[arg(long)]
         remove: bool,
     },
-    /// Upgrade ClaudeSync to the latest version
+    /// Upgrade ctxsync to the latest version
     Upgrade,
     /// Install completion for the specified shell
     InstallCompletion {
@@ -140,7 +140,7 @@ enum OrganizationCommands {
         /// ID of the organization to set as active
         #[arg(long)]
         org_id: Option<String>,
-        /// Specify the provider for repositories without .claudesync
+        /// Specify the provider for repositories without .ctxsync
         #[arg(long, value_enum, default_value = "claude.ai")]
         provider: ProviderChoice,
     },
@@ -198,7 +198,7 @@ enum ProjectCommands {
         /// UUID of the project to set as active (skips interactive selection)
         #[arg(long)]
         project_id: Option<String>,
-        /// Specify the provider for repositories without .claudesync
+        /// Specify the provider for repositories without .ctxsync
         #[arg(long, value_enum, default_value = "claude.ai")]
         provider: ProviderChoice,
     },
@@ -348,7 +348,7 @@ enum SessionCommands {
         #[arg(short, long)]
         environment_id: Option<String>,
         /// Model to use
-        #[arg(short, long, default_value = claudesync::provider::DEFAULT_SESSION_MODEL)]
+        #[arg(short, long, default_value = ctxsync::provider::DEFAULT_SESSION_MODEL)]
         model: String,
         /// Branch name to create (auto-generated if not provided)
         #[arg(short, long)]
@@ -564,7 +564,7 @@ fn run(cli: Cli, config: &mut FileConfig) -> Result<()> {
         Commands::Schedule { interval, remove } => cli::schedule::schedule(interval, remove),
         Commands::Upgrade => {
             println!(
-                "The Rust version of ClaudeSync is upgraded via cargo or your package manager:"
+                "The Rust version of ctxsync is upgraded via cargo or your package manager:"
             );
             println!("  cargo install --path .   (from the rust/ directory of the repository)");
             println!("Your session key and configuration are preserved across upgrades.");
@@ -576,7 +576,7 @@ fn run(cli: Cli, config: &mut FileConfig) -> Result<()> {
                 .unwrap_or(Shell::Bash);
             println!("# Shell is set to '{shell}'");
             let mut cmd = Cli::command();
-            clap_complete::generate(shell, &mut cmd, "claudesync", &mut std::io::stdout());
+            clap_complete::generate(shell, &mut cmd, "ctxsync", &mut std::io::stdout());
             eprintln!("# Completion script written to stdout. Append it to your shell's rc file.");
             Ok(())
         }

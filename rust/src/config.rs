@@ -109,22 +109,52 @@ fn is_truthy(v: &Value) -> bool {
     }
 }
 
-/// Port of `FileConfigManager`: global config in ~/.claudesync/config.json and
-/// local config in <project>/.claudesync/config.local.json. Session keys are
-/// stored encrypted in ~/.claudesync/<provider>.key.
+/// Port of `FileConfigManager`: global config in ~/.ctxsync/config.json and
+/// local config in <project>/.ctxsync/config.local.json. Session keys are
+/// stored encrypted in ~/.ctxsync/<provider>.key.
+///
+/// Configuration from the tool's former name (ClaudeSync) is honored: the
+/// global ~/.claudesync directory is copied to ~/.ctxsync on first run, and
+/// project-local .claudesync directories keep working as-is.
 pub struct FileConfig {
     pub global_config: Map<String, Value>,
     pub local_config: Map<String, Value>,
     pub global_config_dir: PathBuf,
     global_config_file: PathBuf,
     pub local_config_dir: Option<PathBuf>,
+    /// Which config dir name the local project uses (".ctxsync", or the
+    /// legacy ".claudesync" when that's what was found).
+    pub local_dir_name: &'static str,
+}
+
+pub const LOCAL_DIR_NAME: &str = ".ctxsync";
+pub const LEGACY_LOCAL_DIR_NAME: &str = ".claudesync";
+
+fn copy_dir_recursive(src: &std::path::Path, dst: &std::path::Path) -> std::io::Result<()> {
+    fs::create_dir_all(dst)?;
+    for entry in fs::read_dir(src)? {
+        let entry = entry?;
+        let target = dst.join(entry.file_name());
+        if entry.file_type()?.is_dir() {
+            copy_dir_recursive(&entry.path(), &target)?;
+        } else {
+            fs::copy(entry.path(), target)?;
+        }
+    }
+    Ok(())
 }
 
 impl FileConfig {
     pub fn new() -> Result<Self> {
         let home = dirs::home_dir()
             .ok_or_else(|| CsError::Configuration("Cannot determine home directory".into()))?;
-        let global_config_dir = home.join(".claudesync");
+        let global_config_dir = home.join(LOCAL_DIR_NAME);
+        // First run after the rename: bring over the old global config
+        // (settings and encrypted session keys) so nothing breaks.
+        let legacy_dir = home.join(LEGACY_LOCAL_DIR_NAME);
+        if !global_config_dir.exists() && legacy_dir.is_dir() {
+            let _ = copy_dir_recursive(&legacy_dir, &global_config_dir);
+        }
         let global_config_file = global_config_dir.join("config.json");
 
         let mut cfg = FileConfig {
@@ -133,6 +163,7 @@ impl FileConfig {
             global_config_dir,
             global_config_file,
             local_config_dir: None,
+            local_dir_name: LOCAL_DIR_NAME,
         };
         cfg.global_config = cfg.load_global_config()?;
         cfg.load_local_config()?;
@@ -152,16 +183,19 @@ impl FileConfig {
         Ok(config)
     }
 
-    /// Finds the nearest ancestor directory containing a `.claudesync` folder,
-    /// excluding `~/.claudesync` itself.
-    fn find_local_config_dir(max_depth: usize) -> Option<PathBuf> {
+    /// Finds the nearest ancestor directory containing a `.ctxsync` folder
+    /// (or a legacy `.claudesync` one, which keeps working after the rename),
+    /// excluding the home-level config directories.
+    fn find_local_config_dir(max_depth: usize) -> Option<(PathBuf, &'static str)> {
         let home = dirs::home_dir().unwrap_or_default();
         let mut current = std::env::current_dir().ok()?;
         let mut depth = 0;
         loop {
-            let claudesync_dir = current.join(".claudesync");
-            if claudesync_dir.is_dir() && claudesync_dir != home.join(".claudesync") {
-                return Some(current);
+            for dir_name in [LOCAL_DIR_NAME, LEGACY_LOCAL_DIR_NAME] {
+                let config_dir = current.join(dir_name);
+                if config_dir.is_dir() && config_dir != home.join(dir_name) {
+                    return Some((current, dir_name));
+                }
             }
             let parent = current.parent()?.to_path_buf();
             if parent == current {
@@ -176,9 +210,12 @@ impl FileConfig {
     }
 
     fn load_local_config(&mut self) -> Result<()> {
-        self.local_config_dir = Self::find_local_config_dir(100);
+        if let Some((dir, dir_name)) = Self::find_local_config_dir(100) {
+            self.local_config_dir = Some(dir);
+            self.local_dir_name = dir_name;
+        }
         if let Some(dir) = self.local_config_dir.clone() {
-            let local_file = dir.join(".claudesync").join("config.local.json");
+            let local_file = dir.join(self.local_dir_name).join("config.local.json");
             if local_file.exists() {
                 let text = fs::read_to_string(&local_file)?;
                 self.local_config = serde_json::from_str(&text)?;
@@ -240,7 +277,9 @@ impl FileConfig {
             if key == "local_path" {
                 if let Some(path) = value.as_str() {
                     let dir = PathBuf::from(path);
-                    fs::create_dir_all(dir.join(".claudesync"))?;
+                    // New projects always get a .ctxsync directory
+                    self.local_dir_name = LOCAL_DIR_NAME;
+                    fs::create_dir_all(dir.join(self.local_dir_name))?;
                     self.local_config_dir = Some(dir);
                 }
             }
@@ -260,7 +299,7 @@ impl FileConfig {
 
     pub fn save_local_config(&self) -> Result<()> {
         if let Some(dir) = &self.local_config_dir {
-            let local_file = dir.join(".claudesync").join("config.local.json");
+            let local_file = dir.join(self.local_dir_name).join("config.local.json");
             if let Some(parent) = local_file.parent() {
                 fs::create_dir_all(parent)?;
             }

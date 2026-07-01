@@ -8,7 +8,8 @@ import Foundation
 /// Returns relative path → MD5 of UTF-8 content.
 enum FileScanner {
     static let excludedDirs: Set<String> = [
-        ".git", ".svn", ".hg", ".bzr", "_darcs", "CVS", "claude_chats", ".claudesync",
+        ".git", ".svn", ".hg", ".bzr", "_darcs", "CVS", "claude_chats", ".ctxsync",
+        ".claudesync",  // legacy name, still honored
     ]
 
     enum ScanError: LocalizedError {

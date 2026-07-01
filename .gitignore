@@ -168,9 +168,11 @@ __pycache__
 # claude
 claude.sync
 config.json
+ctxsync.log
 claudesync.log
 claude_chats
 some_value
+.ctxsync
 .claudesync
 
 ROADMAP.md

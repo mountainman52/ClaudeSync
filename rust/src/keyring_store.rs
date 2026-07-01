@@ -12,7 +12,10 @@ use serde_json::{json, Value};
 use crate::config::parse_iso_datetime;
 use crate::error::{CsError, Result};
 
-const SERVICE: &str = "claudesync";
+const SERVICE: &str = "ctxsync";
+/// The service name from before the tool was renamed; items stored under it
+/// are migrated to the new name on first read.
+const LEGACY_SERVICE: &str = "claudesync";
 
 /// Platforms where the credential store is reliable enough to be the
 /// default. (The Linux kernel keyring does not survive reboots, so it is
@@ -24,6 +27,26 @@ pub fn is_default_platform() -> bool {
 fn entry(provider: &str) -> Result<keyring::Entry> {
     keyring::Entry::new(SERVICE, provider)
         .map_err(|e| CsError::Other(format!("Credential store unavailable: {e}")))
+}
+
+/// If no item exists under the new service name, moves any item stored under
+/// the legacy "claudesync" service to the new one. Best-effort: failures
+/// leave the legacy item in place.
+fn migrate_legacy_entry(provider: &str) {
+    let Ok(new_entry) = keyring::Entry::new(SERVICE, provider) else {
+        return;
+    };
+    if new_entry.get_password().is_ok() {
+        return;
+    }
+    let Ok(legacy) = keyring::Entry::new(LEGACY_SERVICE, provider) else {
+        return;
+    };
+    if let Ok(payload) = legacy.get_password() {
+        if new_entry.set_password(&payload).is_ok() {
+            let _ = legacy.delete_credential();
+        }
+    }
 }
 
 fn encode_payload(session_key: &str, expiry: NaiveDateTime) -> String {
@@ -53,6 +76,7 @@ pub fn store(provider: &str, session_key: &str, expiry: NaiveDateTime) -> Result
 
 /// Returns the stored session key if present and unexpired.
 pub fn retrieve(provider: &str) -> Result<Option<(String, NaiveDateTime)>> {
+    migrate_legacy_entry(provider);
     match entry(provider)?.get_password() {
         Ok(payload) => Ok(decode_payload(&payload)
             .filter(|(_, expiry)| chrono::Utc::now().naive_utc() <= *expiry)),

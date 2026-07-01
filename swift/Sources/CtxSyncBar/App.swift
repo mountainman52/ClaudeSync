@@ -1,7 +1,7 @@
 import SwiftUI
 
 @main
-struct ClaudeSyncBarApp: App {
+struct CtxSyncBarApp: App {
     @StateObject private var controller = SyncController()
 
     var body: some Scene {
@@ -13,7 +13,7 @@ struct ClaudeSyncBarApp: App {
         }
         .menuBarExtraStyle(.menu)
 
-        Window("ClaudeSync Settings", id: "settings") {
+        Window("CtxSync Settings", id: "settings") {
             SettingsView()
                 .environmentObject(controller)
                 .frame(minWidth: 460)

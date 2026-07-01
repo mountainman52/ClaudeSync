@@ -14,7 +14,7 @@ use std::sync::{Arc, Mutex};
 
 use serde_json::{json, Value};
 
-use claudesync::provider::ClaudeProvider;
+use ctxsync::provider::ClaudeProvider;
 
 pub struct Request {
     pub method: String,

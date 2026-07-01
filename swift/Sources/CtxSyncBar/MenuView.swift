@@ -39,7 +39,7 @@ struct MenuView: View {
 
             Divider()
 
-            Button("Quit ClaudeSync") {
+            Button("Quit CtxSync") {
                 NSApp.terminate(nil)
             }
             .keyboardShortcut("q")

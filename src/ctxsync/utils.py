@@ -7,8 +7,8 @@ import click
 import pathspec
 import logging
 
-from claudesync.exceptions import ConfigurationError, ProviderError
-from claudesync.provider_factory import get_provider
+from ctxsync.exceptions import ConfigurationError, ProviderError
+from ctxsync.provider_factory import get_provider
 
 logger = logging.getLogger(__name__)
 
@@ -190,7 +190,8 @@ def get_local_files(config, local_path, category=None, include_submodules=False)
         "_darcs",
         "CVS",
         "claude_chats",
-        ".claudesync",
+        ".ctxsync",
+        ".claudesync",  # legacy name, still honored
     }
 
     categories = config.get("file_categories", {})
@@ -291,12 +292,12 @@ def validate_and_get_provider(config, require_org=True, require_project=False):
     """
     if require_org and not config.get("active_organization_id"):
         raise ConfigurationError(
-            "No active organization set. Please select an organization (claudesync organization set)."
+            "No active organization set. Please select an organization (ctxsync organization set)."
         )
 
     if require_project and not config.get("active_project_id"):
         raise ConfigurationError(
-            "No active project set. Please select or create a project (claudesync project set)."
+            "No active project set. Please select or create a project (ctxsync project set)."
         )
 
     active_provider = config.get_active_provider()

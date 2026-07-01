@@ -1,20 +1,20 @@
 #!/usr/bin/env bash
-# Builds ClaudeSync.app — a menu-bar-only (LSUIElement) bundle — from the
+# Builds CtxSync.app — a menu-bar-only (LSUIElement) bundle — from the
 # SwiftPM package. Run on macOS:
 #
 #   ./make-app.sh
-#   mv ClaudeSync.app /Applications/
+#   mv CtxSync.app /Applications/
 set -euo pipefail
 cd "$(dirname "$0")"
 
 swift build -c release
 
-APP="ClaudeSync.app"
-BIN=".build/release/ClaudeSyncBar"
+APP="CtxSync.app"
+BIN=".build/release/CtxSyncBar"
 
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS"
-cp "$BIN" "$APP/Contents/MacOS/ClaudeSyncBar"
+cp "$BIN" "$APP/Contents/MacOS/CtxSyncBar"
 
 cat > "$APP/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
@@ -22,13 +22,13 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 <plist version="1.0">
 <dict>
     <key>CFBundleExecutable</key>
-    <string>ClaudeSyncBar</string>
+    <string>CtxSyncBar</string>
     <key>CFBundleIdentifier</key>
-    <string>com.claudesync.menubar</string>
+    <string>com.ctxsync.menubar</string>
     <key>CFBundleName</key>
-    <string>ClaudeSync</string>
+    <string>CtxSync</string>
     <key>CFBundleDisplayName</key>
-    <string>ClaudeSync</string>
+    <string>CtxSync</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>

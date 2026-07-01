@@ -7,8 +7,8 @@ import io
 
 from tqdm import tqdm
 
-from claudesync.utils import compute_md5_hash
-from claudesync.exceptions import ProviderError
+from ctxsync.utils import compute_md5_hash
+from ctxsync.exceptions import ProviderError
 from .compression import compress_content, decompress_content
 
 logger = logging.getLogger(__name__)

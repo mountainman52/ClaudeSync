@@ -34,7 +34,7 @@ pub fn init(
         Some(d) => d,
         None => prompt_string(
             "Enter the project description",
-            Some("Project created with ClaudeSync"),
+            Some("Project created with ctxsync"),
         )?,
     };
     let local_path = match local_path {
@@ -52,8 +52,8 @@ pub fn init(
         )));
     }
 
-    let claudesync_dir = local_path_buf.join(".claudesync");
-    fs::create_dir_all(&claudesync_dir)?;
+    let ctxsync_dir = local_path_buf.join(crate::config::LOCAL_DIR_NAME);
+    fs::create_dir_all(&ctxsync_dir)?;
 
     config.set(
         "active_provider",
@@ -90,7 +90,7 @@ pub fn init(
         println!("  - Project location: {local_path}");
         println!(
             "  - Project config location: {}",
-            claudesync_dir.join("config.local.json").display()
+            ctxsync_dir.join("config.local.json").display()
         );
         println!("  - Remote URL: https://claude.ai/project/{project_uuid}");
     } else {
@@ -99,11 +99,11 @@ pub fn init(
         println!("  - Project location: {local_path}");
         println!(
             "  - Project config location: {}",
-            claudesync_dir.join("config.local.json").display()
+            ctxsync_dir.join("config.local.json").display()
         );
         println!("\nTo link to a remote project:");
-        println!("1. Run 'claudesync organization set' to select an organization");
-        println!("2. Run 'claudesync project set' to select an existing project");
+        println!("1. Run 'ctxsync organization set' to select an organization");
+        println!("2. Run 'ctxsync project set' to select an existing project");
     }
     Ok(())
 }
@@ -177,8 +177,9 @@ fn save_project_selection(config: &mut FileConfig, project: &Project) -> Result<
     )?;
     println!("Selected project: {} (ID: {})", project.name, project.id);
 
-    fs::create_dir_all(".claudesync")?;
-    let claudesync_dir = fs::canonicalize(".claudesync")?;
+    // Honor a legacy .claudesync dir when that is what was discovered
+    fs::create_dir_all(config.local_dir_name)?;
+    let ctxsync_dir = fs::canonicalize(config.local_dir_name)?;
     config.save_local_config()?;
 
     println!("\nProject created:");
@@ -188,7 +189,7 @@ fn save_project_selection(config: &mut FileConfig, project: &Project) -> Result<
     );
     println!(
         "  - Project config location: {}",
-        claudesync_dir.join("config.local.json").display()
+        ctxsync_dir.join("config.local.json").display()
     );
     Ok(())
 }

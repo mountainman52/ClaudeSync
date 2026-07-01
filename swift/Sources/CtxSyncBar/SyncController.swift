@@ -262,7 +262,7 @@ final class SyncController: ObservableObject {
         if config.compressionAlgorithm != "none" {
             lastError = "This project uses compression_algorithm="
                 + "\(config.compressionAlgorithm), which only the CLI supports. "
-                + "Sync with `claudesync push` or set it to \"none\"."
+                + "Sync with `ctxsync push` or set it to \"none\"."
             return
         }
         if let category = config.defaultSyncCategory {

@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from claudesync.configmanager import BaseConfigManager
+from ctxsync.configmanager import BaseConfigManager
 
 
 class InMemoryConfigManager(BaseConfigManager):

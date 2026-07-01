@@ -1,9 +1,9 @@
 name: Feature Request
-description: Suggest a new feature for ClaudeSync.
+description: Suggest a new feature for ctxsync.
 labels: ["enhancement"]
-projects: ["claudesync/features"]
+projects: ["ctxsync/features"]
 assignees:
-  - claudesync-team
+  - ctxsync-team
 body:
   - type: markdown
     attributes:
@@ -34,7 +34,7 @@ body:
     id: benefits
     attributes:
       label: Benefits
-      description: Explain how this feature will improve ClaudeSync or benefit users.
+      description: Explain how this feature will improve ctxsync or benefit users.
       placeholder: Describe the advantages and positive impact of the feature.
     validations:
       required: true
@@ -72,9 +72,9 @@ body:
       required: false
 
   - type: input
-    id: claudesync_version
+    id: ctxsync_version
     attributes:
-      label: ClaudeSync Version
+      label: ctxsync Version
       description: e.g., 1.2.3
       placeholder: e.g., 1.2.3
     validations:

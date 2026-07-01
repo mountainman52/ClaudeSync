@@ -69,7 +69,7 @@ impl SessionKeyManager {
         eprintln!("* If you have NOT specified a custom ssh_key_path in config,");
         eprintln!("* have created a key, and are still seeing this message,");
         eprintln!("  be sure to name your key 'id_ed25519' or 'id_ecdsa' so it's found automatically.");
-        eprintln!("* Or set ssh_key_path with the full key name in your .claudesync/config.local.json");
+        eprintln!("* Or set ssh_key_path with the full key name in your .ctxsync/config.local.json");
         print!("Enter the full path to your new Ed25519 private key: ");
         std::io::stdout().flush()?;
         let mut input = String::new();
@@ -110,6 +110,7 @@ impl SessionKeyManager {
         let mut derived = [0u8; 32];
         // Fixed salt and iteration count match the Python implementation so
         // keys encrypted by either version stay interchangeable.
+        // Salt kept from the ClaudeSync days: changing it would orphan existing keys
         pbkdf2::pbkdf2_hmac::<Sha256>(&key_data, b"claudesync", 100_000, &mut derived);
         Ok(URL_SAFE.encode(derived))
     }

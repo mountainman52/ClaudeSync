@@ -21,7 +21,7 @@ final class FSWatcher {
     }
 
     private var stream: FSEventStreamRef?
-    private let queue = DispatchQueue(label: "claudesync.fswatcher")
+    private let queue = DispatchQueue(label: "ctxsync.fswatcher")
 
     init?(path: String, latency: TimeInterval = 1.0,
           isRelevant: @escaping @Sendable (String) -> Bool,

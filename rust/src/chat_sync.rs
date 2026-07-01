@@ -14,7 +14,7 @@ use crate::sync::retry_on_403;
 pub fn sync_chats(provider: &ClaudeProvider, config: &FileConfig, sync_all: bool) -> Result<()> {
     let local_path = config.get_str("local_path").ok_or_else(|| {
         CsError::Configuration(
-            "Local path not set. Use 'claudesync project set' or 'claudesync project create' to set it."
+            "Local path not set. Use 'ctxsync project set' or 'ctxsync project create' to set it."
                 .into(),
         )
     })?;

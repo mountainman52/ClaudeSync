@@ -9,7 +9,7 @@ from ..utils import handle_errors
 
 @click.group()
 def config():
-    """Manage claudesync configuration."""
+    """Manage ctxsync configuration."""
     pass
 
 

@@ -48,32 +48,32 @@ def validate_local_path(local_path):
 @handle_errors
 def schedule(config, interval):
     """Set up automated synchronization at regular intervals."""
-    claudesync_path = shutil.which("claudesync")
-    if not claudesync_path:
+    ctxsync_path = shutil.which("ctxsync")
+    if not ctxsync_path:
         click.echo(
-            "Error: claudesync not found in PATH. Please ensure it's installed correctly."
+            "Error: ctxsync not found in PATH. Please ensure it's installed correctly."
         )
         sys.exit(1)
 
     if sys.platform.startswith("win"):
-        setup_windows_task(claudesync_path, interval)
+        setup_windows_task(ctxsync_path, interval)
     else:
-        setup_unix_cron(claudesync_path, interval)
+        setup_unix_cron(ctxsync_path, interval)
 
 
-def setup_windows_task(claudesync_path, interval):
+def setup_windows_task(ctxsync_path, interval):
     click.echo("Windows Task Scheduler setup:")
-    command = f'schtasks /create /tn "ClaudeSync" /tr "{claudesync_path} sync" /sc minute /mo {interval}'
+    command = f'schtasks /create /tn "ctxsync" /tr "{ctxsync_path} sync" /sc minute /mo {interval}'
     click.echo(f"Run this command to create the task:\n{command}")
-    click.echo('\nTo remove the task, run: schtasks /delete /tn "ClaudeSync" /f')
+    click.echo('\nTo remove the task, run: schtasks /delete /tn "ctxsync" /f')
 
 
-def setup_unix_cron(claudesync_path, interval):
+def setup_unix_cron(ctxsync_path, interval):
     cron = CronTab(user=True)
-    job = cron.new(command=f"{claudesync_path} sync")
+    job = cron.new(command=f"{ctxsync_path} sync")
     job.minute.every(interval)
     cron.write()
     click.echo(f"Cron job created successfully! It will run every {interval} minutes.")
     click.echo(
-        "\nTo remove the cron job, run: crontab -e and remove the line for ClaudeSync"
+        "\nTo remove the cron job, run: crontab -e and remove the line for ctxsync"
     )

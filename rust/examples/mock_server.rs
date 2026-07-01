@@ -5,7 +5,7 @@
 //!   cargo run --example mock_server -- [port]      (default port 8000)
 //!
 //! Then point the CLI at it:
-//!   claudesync config set claude_api_url http://127.0.0.1:8000/api
+//!   ctxsync config set claude_api_url http://127.0.0.1:8000/api
 //!
 //! Log in with any key starting with `sk-ant` (the mock validates the
 //! cookie prefix only).
@@ -33,7 +33,7 @@ fn main() {
     );
     println!("Point the CLI at it with:");
     println!(
-        "  claudesync config set claude_api_url http://127.0.0.1:{}/api",
+        "  ctxsync config set claude_api_url http://127.0.0.1:{}/api",
         server.port
     );
     println!("Press Ctrl+C to stop. Requests are logged below.\n");

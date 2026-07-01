@@ -1,4 +1,4 @@
-# src/claudesync/providers/base_provider.py
+# src/ctxsync/providers/base_provider.py
 
 from abc import ABC, abstractmethod
 

@@ -136,7 +136,8 @@ pub fn get_local_files(
         "_darcs",
         "CVS",
         "claude_chats",
-        ".claudesync",
+        ".ctxsync",
+        ".claudesync", // legacy name, still honored
     ]
     .into_iter()
     .collect();
@@ -296,13 +297,13 @@ pub fn validate_and_get_provider(
 ) -> Result<ClaudeProvider> {
     if require_org && config.get_str("active_organization_id").is_none() {
         return Err(CsError::Configuration(
-            "No active organization set. Please select an organization (claudesync organization set)."
+            "No active organization set. Please select an organization (ctxsync organization set)."
                 .into(),
         ));
     }
     if require_project && config.get_str("active_project_id").is_none() {
         return Err(CsError::Configuration(
-            "No active project set. Please select or create a project (claudesync project set)."
+            "No active project set. Please select or create a project (ctxsync project set)."
                 .into(),
         ));
     }

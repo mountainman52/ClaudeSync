@@ -1,16 +1,16 @@
 [package]
-name = "claudesync"
+name = "ctxsync"
 version = "0.7.6"
 edition = "2021"
-description = "Synchronize local files with Claude.ai projects (Rust port of ClaudeSync)"
+description = "Synchronize local files with Claude.ai projects (Rust port of ctxsync, formerly ClaudeSync)"
 license = "MIT"
 
 [lib]
-name = "claudesync"
+name = "ctxsync"
 path = "src/lib.rs"
 
 [[bin]]
-name = "claudesync"
+name = "ctxsync"
 path = "src/main.rs"
 
 [dependencies]

@@ -1,4 +1,4 @@
-# src/claudesync/provider_factory.py
+# src/ctxsync/provider_factory.py
 
 from .providers.base_provider import BaseProvider
 from .providers.claude_ai import ClaudeAIProvider

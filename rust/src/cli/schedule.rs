@@ -4,8 +4,12 @@ use std::process::{Command, Stdio};
 use crate::cli::prompt_usize;
 use crate::error::{CsError, Result};
 
-const LAUNCHD_LABEL: &str = "com.claudesync.push";
-const CRON_MARKER: &str = "# ClaudeSync";
+const LAUNCHD_LABEL: &str = "com.ctxsync.push";
+const CRON_MARKER: &str = "# ctxsync";
+// Names used before the tool was renamed; `schedule --remove` still cleans
+// these up.
+const LEGACY_LAUNCHD_LABEL: &str = "com.claudesync.push";
+const LEGACY_CRON_MARKER: &str = "# ClaudeSync";
 
 /// Set up (or remove) automated synchronization at regular intervals.
 /// Uses launchd on macOS, cron elsewhere on Unix, and prints Task Scheduler
@@ -20,9 +24,9 @@ pub fn schedule(interval: Option<u32>, remove: bool) -> Result<()> {
         None => prompt_usize("Enter sync interval in minutes", Some(5))?,
     };
 
-    let claudesync_path = which_claudesync().ok_or_else(|| {
+    let ctxsync_path = which_ctxsync().ok_or_else(|| {
         CsError::Configuration(
-            "Error: claudesync not found in PATH. Please ensure it's installed correctly.".into(),
+            "Error: ctxsync not found in PATH. Please ensure it's installed correctly.".into(),
         )
     })?;
     // Scheduled jobs start in an arbitrary directory, so anchor the push to
@@ -31,56 +35,62 @@ pub fn schedule(interval: Option<u32>, remove: bool) -> Result<()> {
     let workdir = std::env::current_dir()?;
 
     if cfg!(target_os = "macos") {
-        setup_launchd(&claudesync_path, interval, &workdir)
+        setup_launchd(&ctxsync_path, interval, &workdir)
     } else if cfg!(windows) {
-        setup_windows_task(&claudesync_path, interval);
+        setup_windows_task(&ctxsync_path, interval);
         Ok(())
     } else {
-        setup_unix_cron(&claudesync_path, interval, &workdir)
+        setup_unix_cron(&ctxsync_path, interval, &workdir)
     }
 }
 
 fn remove_schedule() -> Result<()> {
     if cfg!(target_os = "macos") {
-        let plist = launchd_plist_path()?;
-        let _ = Command::new("launchctl")
-            .arg("unload")
-            .arg(&plist)
-            .status();
-        if plist.exists() {
-            std::fs::remove_file(&plist)?;
-            println!("Removed launchd job {LAUNCHD_LABEL} ({}).", plist.display());
-        } else {
-            println!("No launchd job found at {}.", plist.display());
+        let mut removed = false;
+        for label in [LAUNCHD_LABEL, LEGACY_LAUNCHD_LABEL] {
+            let plist = launchd_plist_path_for(label)?;
+            let _ = Command::new("launchctl")
+                .arg("unload")
+                .arg(&plist)
+                .stderr(Stdio::null())
+                .status();
+            if plist.exists() {
+                std::fs::remove_file(&plist)?;
+                println!("Removed launchd job {label} ({}).", plist.display());
+                removed = true;
+            }
+        }
+        if !removed {
+            println!("No launchd job found.");
         }
         Ok(())
     } else if cfg!(windows) {
         println!("Run this command to remove the task:");
-        println!("  schtasks /delete /tn \"ClaudeSync\" /f");
+        println!("  schtasks /delete /tn \"ctxsync\" /f");
         Ok(())
     } else {
         let existing = read_crontab();
         let filtered: String = existing
             .lines()
-            .filter(|line| !line.contains(CRON_MARKER))
+            .filter(|line| !line.contains(CRON_MARKER) && !line.contains(LEGACY_CRON_MARKER))
             .map(|line| format!("{line}\n"))
             .collect();
         if filtered == existing {
-            println!("No ClaudeSync cron entry found.");
+            println!("No ctxsync cron entry found.");
             return Ok(());
         }
         write_crontab(&filtered)?;
-        println!("Removed ClaudeSync cron entry.");
+        println!("Removed ctxsync cron entry.");
         Ok(())
     }
 }
 
-fn which_claudesync() -> Option<String> {
+fn which_ctxsync() -> Option<String> {
     // Prefer the current executable; fall back to PATH lookup
     if let Ok(exe) = std::env::current_exe() {
         return Some(exe.to_string_lossy().to_string());
     }
-    let output = Command::new("which").arg("claudesync").output().ok()?;
+    let output = Command::new("which").arg("ctxsync").output().ok()?;
     if output.status.success() {
         let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
         if !path.is_empty() {
@@ -93,15 +103,19 @@ fn which_claudesync() -> Option<String> {
 // --- launchd (macOS) ---
 
 fn launchd_plist_path() -> Result<PathBuf> {
+    launchd_plist_path_for(LAUNCHD_LABEL)
+}
+
+fn launchd_plist_path_for(label: &str) -> Result<PathBuf> {
     let home = dirs::home_dir()
         .ok_or_else(|| CsError::Configuration("Cannot determine home directory".into()))?;
     Ok(home
         .join("Library")
         .join("LaunchAgents")
-        .join(format!("{LAUNCHD_LABEL}.plist")))
+        .join(format!("{label}.plist")))
 }
 
-fn setup_launchd(claudesync_path: &str, interval: usize, workdir: &std::path::Path) -> Result<()> {
+fn setup_launchd(ctxsync_path: &str, interval: usize, workdir: &std::path::Path) -> Result<()> {
     let plist_path = launchd_plist_path()?;
     if let Some(parent) = plist_path.parent() {
         std::fs::create_dir_all(parent)?;
@@ -110,7 +124,7 @@ fn setup_launchd(claudesync_path: &str, interval: usize, workdir: &std::path::Pa
         .ok_or_else(|| CsError::Configuration("Cannot determine home directory".into()))?;
     let log_dir = home.join("Library").join("Logs");
     std::fs::create_dir_all(&log_dir)?;
-    let log_path = log_dir.join("claudesync.log");
+    let log_path = log_dir.join("ctxsync.log");
 
     let plist = format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>
@@ -120,7 +134,7 @@ fn setup_launchd(claudesync_path: &str, interval: usize, workdir: &std::path::Pa
     <key>Label</key><string>{LAUNCHD_LABEL}</string>
     <key>ProgramArguments</key>
     <array>
-        <string>{claudesync_path}</string>
+        <string>{ctxsync_path}</string>
         <string>push</string>
     </array>
     <key>WorkingDirectory</key><string>{workdir}</string>
@@ -156,21 +170,21 @@ fn setup_launchd(claudesync_path: &str, interval: usize, workdir: &std::path::Pa
     }
 
     println!("launchd job installed: {}", plist_path.display());
-    println!("It will run 'claudesync push' in {} every {interval} minute(s).", workdir.display());
+    println!("It will run 'ctxsync push' in {} every {interval} minute(s).", workdir.display());
     println!("Output is logged to {}.", log_path.display());
-    println!("\nTo remove it, run: claudesync schedule --remove");
+    println!("\nTo remove it, run: ctxsync schedule --remove");
     Ok(())
 }
 
 // --- Windows ---
 
-fn setup_windows_task(claudesync_path: &str, interval: usize) {
+fn setup_windows_task(ctxsync_path: &str, interval: usize) {
     println!("Windows Task Scheduler setup:");
     let command = format!(
-        "schtasks /create /tn \"ClaudeSync\" /tr \"{claudesync_path} push\" /sc minute /mo {interval}"
+        "schtasks /create /tn \"ctxsync\" /tr \"{ctxsync_path} push\" /sc minute /mo {interval}"
     );
     println!("Run this command to create the task:\n{command}");
-    println!("\nTo remove the task, run: schtasks /delete /tn \"ClaudeSync\" /f");
+    println!("\nTo remove the task, run: schtasks /delete /tn \"ctxsync\" /f");
 }
 
 // --- cron (other Unix) ---
@@ -208,9 +222,9 @@ fn write_crontab(content: &str) -> Result<()> {
     Ok(())
 }
 
-fn setup_unix_cron(claudesync_path: &str, interval: usize, workdir: &std::path::Path) -> Result<()> {
+fn setup_unix_cron(ctxsync_path: &str, interval: usize, workdir: &std::path::Path) -> Result<()> {
     let new_entry = format!(
-        "*/{interval} * * * * cd '{}' && {claudesync_path} push {CRON_MARKER}",
+        "*/{interval} * * * * cd '{}' && {ctxsync_path} push {CRON_MARKER}",
         workdir.display()
     );
     let mut crontab = read_crontab();
@@ -222,6 +236,6 @@ fn setup_unix_cron(claudesync_path: &str, interval: usize, workdir: &std::path::
     write_crontab(&crontab)?;
 
     println!("Cron job created successfully! It will run every {interval} minutes.");
-    println!("\nTo remove it, run: claudesync schedule --remove");
+    println!("\nTo remove it, run: ctxsync schedule --remove");
     Ok(())
 }

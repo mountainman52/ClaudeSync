@@ -2,12 +2,12 @@
 import PackageDescription
 
 let package = Package(
-    name: "ClaudeSyncBar",
+    name: "CtxSyncBar",
     platforms: [.macOS(.v13)],
     targets: [
         .executableTarget(
-            name: "ClaudeSyncBar",
-            path: "Sources/ClaudeSyncBar"
+            name: "CtxSyncBar",
+            path: "Sources/CtxSyncBar"
         )
     ]
 )

@@ -1,12 +1,19 @@
 import Foundation
 
 /// Reads and writes the same configuration files as the CLI:
-/// `~/.claudesync/config.json` (global) and
-/// `<project>/.claudesync/config.local.json` (per project), so projects set
+/// `~/.ctxsync/config.json` (global) and
+/// `<project>/.ctxsync/config.local.json` (per project), so projects set
 /// up in either tool work in the other.
+///
+/// Configuration from the tool's former name (ClaudeSync) is honored: the
+/// global `~/.claudesync` directory is copied to `~/.ctxsync` on first run,
+/// and project-local `.claudesync` directories keep working as-is.
 struct ClaudeConfig {
+    static let localDirName = ".ctxsync"
+    static let legacyLocalDirName = ".claudesync"
+
     static var globalDir: URL {
-        FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claudesync")
+        FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(localDirName)
     }
     static var globalFile: URL { globalDir.appendingPathComponent("config.json") }
 
@@ -14,8 +21,33 @@ struct ClaudeConfig {
     var projectFolder: URL?
     var local: [String: Any]
 
+    /// The project's config dir name: `.ctxsync`, or the legacy
+    /// `.claudesync` when that's what the project already has.
+    static func configDirName(in folder: URL) -> String {
+        let fm = FileManager.default
+        if fm.fileExists(atPath: folder.appendingPathComponent(localDirName).path) {
+            return localDirName
+        }
+        if fm.fileExists(atPath: folder.appendingPathComponent(legacyLocalDirName).path) {
+            return legacyLocalDirName
+        }
+        return localDirName
+    }
+
     static func localFile(in folder: URL) -> URL {
-        folder.appendingPathComponent(".claudesync").appendingPathComponent("config.local.json")
+        folder.appendingPathComponent(configDirName(in: folder))
+            .appendingPathComponent("config.local.json")
+    }
+
+    /// First run after the rename: bring over the old global config so
+    /// nothing breaks. Best-effort.
+    private static func migrateLegacyGlobalDir() {
+        let fm = FileManager.default
+        let legacyDir = fm.homeDirectoryForCurrentUser
+            .appendingPathComponent(legacyLocalDirName)
+        guard !fm.fileExists(atPath: globalDir.path),
+              fm.fileExists(atPath: legacyDir.path) else { return }
+        try? fm.copyItem(at: legacyDir, to: globalDir)
     }
 
     private static func readJSON(at url: URL) -> [String: Any] {
@@ -27,6 +59,7 @@ struct ClaudeConfig {
     }
 
     static func load(projectFolder: URL?) -> ClaudeConfig {
+        migrateLegacyGlobalDir()
         let global = readJSON(at: globalFile)
         let local = projectFolder.map { readJSON(at: localFile(in: $0)) } ?? [:]
         return ClaudeConfig(global: global, projectFolder: projectFolder, local: local)
