@@ -1,4 +1,4 @@
-# ClaudeSync
+# ctssync
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![PyPI](https://badge.fury.io/py/claudesync.svg)](https://pypi.org/project/claudesync/)
