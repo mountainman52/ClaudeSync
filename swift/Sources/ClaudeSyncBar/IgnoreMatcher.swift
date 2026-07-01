@@ -117,8 +117,14 @@ final class IgnoreMatcher: @unchecked Sendable {
             i += 1
         }
         while i < chars.count && chars[i] != "]" {
-            let member = chars[i]
-            if member == "\\" || member == "^" || member == "[" {
+            var member = chars[i]
+            // A backslash escapes the next character (so "[\]]" is a class
+            // containing "]", not a class containing "\").
+            if member == "\\" && i + 1 < chars.count {
+                i += 1
+                member = chars[i]
+            }
+            if member == "\\" || member == "^" || member == "[" || member == "]" {
                 body += "\\" + String(member)
             } else {
                 body += String(member)

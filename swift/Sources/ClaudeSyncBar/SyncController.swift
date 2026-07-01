@@ -307,6 +307,13 @@ final class SyncController: ObservableObject {
         progressText = nil
         isSyncing = false
 
+        // The watcher's relevance filter snapshots the ignore rules at
+        // creation; rebuild it after each sync so rule edits (which
+        // themselves trigger a sync) take effect for subsequent events.
+        if autoSync {
+            updateWatcher()
+        }
+
         if syncQueuedWhileBusy {
             syncQueuedWhileBusy = false
             // Only chase the queued request when this pass succeeded — a
