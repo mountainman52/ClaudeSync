@@ -1,16 +1,16 @@
 import Foundation
 
 /// Gitignore-style pattern matching (the common subset: `*`, `?`, `**`,
-/// leading `/` anchors, trailing `/` for directories, `!` negation,
-/// last-match-wins).
-final class IgnoreMatcher {
+/// `[...]` character classes, leading `/` anchors, trailing `/` for
+/// directories, `!` negation, last-match-wins).
+final class IgnoreMatcher: @unchecked Sendable {
     private struct Rule {
         let regex: NSRegularExpression
         let negated: Bool
         let dirOnly: Bool
     }
 
-    private var rules: [Rule] = []
+    private let rules: [Rule]
 
     convenience init?(contentsOf url: URL) {
         guard let text = try? String(contentsOf: url, encoding: .utf8) else { return nil }
@@ -18,11 +18,14 @@ final class IgnoreMatcher {
     }
 
     init(lines: [String]) {
+        var rules: [Rule] = []
         for rawLine in lines {
             var line = rawLine
             if line.hasPrefix("#") { continue }
-            // Trailing spaces are ignored unless escaped; keep it simple
-            line = line.trimmingCharacters(in: .whitespaces)
+            // Git ignores unescaped trailing spaces but keeps leading ones.
+            while line.hasSuffix(" ") && !line.hasSuffix("\\ ") {
+                line.removeLast()
+            }
             if line.isEmpty { continue }
 
             var negated = false
@@ -53,6 +56,7 @@ final class IgnoreMatcher {
             guard let regex = try? NSRegularExpression(pattern: pattern) else { continue }
             rules.append(Rule(regex: regex, negated: negated, dirOnly: dirOnly))
         }
+        self.rules = rules
     }
 
     /// Translates one gitignore glob into a regex body.
@@ -78,6 +82,14 @@ final class IgnoreMatcher {
                 out += "[^/]*"
             case "?":
                 out += "[^/]"
+            case "[":
+                if let (cls, next) = translateCharacterClass(chars, from: i) {
+                    out += cls
+                    i = next
+                    continue
+                }
+                // Unterminated class: a literal '['
+                out += "\\["
             default:
                 out += NSRegularExpression.escapedPattern(for: String(c))
             }
@@ -86,17 +98,48 @@ final class IgnoreMatcher {
         return out
     }
 
+    /// Translates a `[...]` class starting at `chars[start] == "["`; returns
+    /// the regex class and the index just past the closing `]`, or nil when
+    /// the class is unterminated.
+    private static func translateCharacterClass(
+        _ chars: [Character], from start: Int
+    ) -> (String, Int)? {
+        var i = start + 1
+        var body = ""
+        if i < chars.count && (chars[i] == "!" || chars[i] == "^") {
+            body += "^"
+            i += 1
+        }
+        // A ']' immediately after the opening (or the negation) is a literal
+        // member, not the terminator.
+        if i < chars.count && chars[i] == "]" {
+            body += "\\]"
+            i += 1
+        }
+        while i < chars.count && chars[i] != "]" {
+            let member = chars[i]
+            if member == "\\" || member == "^" || member == "[" {
+                body += "\\" + String(member)
+            } else {
+                body += String(member)
+            }
+            i += 1
+        }
+        guard i < chars.count, !body.isEmpty, body != "^" else { return nil }
+        return ("[" + body + "]", i + 1)
+    }
+
     /// Whether `relativePath` (forward-slash separated, no leading slash)
-    /// is ignored. Last matching rule wins.
+    /// is ignored. Last matching rule wins, so scanning in reverse lets the
+    /// first hit decide.
     func isIgnored(_ relativePath: String, isDirectory: Bool) -> Bool {
-        var ignored = false
         let range = NSRange(relativePath.startIndex..., in: relativePath)
-        for rule in rules {
+        for rule in rules.reversed() {
             if rule.dirOnly && !isDirectory { continue }
             if rule.regex.firstMatch(in: relativePath, range: range) != nil {
-                ignored = !rule.negated
+                return !rule.negated
             }
         }
-        return ignored
+        return false
     }
 }

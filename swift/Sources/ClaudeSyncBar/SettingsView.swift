@@ -24,8 +24,19 @@ struct SettingsView: View {
         .formStyle(.grouped)
         .padding(.bottom, 8)
         .task {
-            await controller.refreshOrganizations()
-            await controller.refreshProjects()
+            async let orgs: Void = controller.refreshOrganizations()
+            async let projects: Void = controller.refreshProjects()
+            _ = await (orgs, projects)
+        }
+    }
+
+    private func runLogin(_ operation: @escaping () async -> Bool) {
+        loggingIn = true
+        Task {
+            if await operation() {
+                sessionKeyInput = ""
+            }
+            loggingIn = false
         }
     }
 
@@ -47,23 +58,14 @@ struct SettingsView: View {
                     .foregroundColor(.secondary)
                 HStack {
                     Button("Log In from Clipboard") {
-                        loggingIn = true
-                        Task {
-                            _ = await controller.loginFromClipboard()
-                            loggingIn = false
-                        }
+                        runLogin { await controller.loginFromClipboard() }
                     }
+                    .disabled(loggingIn)
                     Button("Log In") {
-                        loggingIn = true
-                        Task {
-                            if await controller.login(with: sessionKeyInput) {
-                                sessionKeyInput = ""
-                            }
-                            loggingIn = false
-                        }
+                        runLogin { await controller.login(with: sessionKeyInput) }
                     }
                     .keyboardShortcut(.defaultAction)
-                    .disabled(sessionKeyInput.isEmpty)
+                    .disabled(sessionKeyInput.isEmpty || loggingIn)
                     if loggingIn {
                         ProgressView().controlSize(.small)
                     }
@@ -81,6 +83,10 @@ struct SettingsView: View {
                 }
             }
             .onChange(of: controller.selectedOrgId) { _ in
+                // A project id from the previous org must not survive the
+                // switch — it would be saved and synced against the wrong org.
+                controller.selectedProjectId = nil
+                controller.selectedProjectName = nil
                 Task { await controller.refreshProjects() }
             }
 

@@ -59,6 +59,17 @@ enum KeychainStore {
 
     /// Returns the stored key if present and unexpired.
     static func load(account: String) throws -> SessionKey? {
+        guard let stored = try fetch(account: account) else { return nil }
+        return stored.expiry > Date() ? stored : nil
+    }
+
+    /// The stored payload even when expired — used to preserve a
+    /// user-supplied expiry (e.g. entered via the CLI) across re-logins.
+    static func stored(account: String) -> SessionKey? {
+        (try? fetch(account: account)) ?? nil
+    }
+
+    private static func fetch(account: String) throws -> SessionKey? {
         var query = baseQuery(account: account)
         query[kSecReturnData as String] = true
         query[kSecMatchLimit as String] = kSecMatchLimitOne
@@ -77,7 +88,6 @@ enum KeychainStore {
             let expiry = ISOFormat.date(from: expiryString)
         else { return nil }
 
-        guard expiry > Date() else { return nil }
         return SessionKey(key: key, expiry: expiry)
     }
 

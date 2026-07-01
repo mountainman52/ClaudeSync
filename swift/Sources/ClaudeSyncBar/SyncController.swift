@@ -9,9 +9,11 @@ import SwiftUI
 final class SyncController: ObservableObject {
     static let provider = "claude.ai"
     private static let autoSyncDefaultsKey = "autoSyncEnabled"
+    private static let projectPathDefaultsKey = "projectPath"
 
-    // Account
-    @Published var sessionActive = false
+    // Account. `sessionKey` is the single source of truth for login state.
+    @Published private var sessionKey: String?
+    var sessionActive: Bool { sessionKey != nil }
 
     // Selection state
     @Published var organizations: [Organization] = []
@@ -35,10 +37,11 @@ final class SyncController: ObservableObject {
         }
     }
 
-    private var sessionKey: String?
     private var watcher: FSWatcher?
     private var debounceTask: Task<Void, Never>?
     private var syncQueuedWhileBusy = false
+
+    private static let relativeFormatter = RelativeDateTimeFormatter()
 
     init() {
         restore()
@@ -52,7 +55,7 @@ final class SyncController: ObservableObject {
     }
 
     var statusSymbol: String {
-        if isSyncing { return "arrow.triangle.2.circlepath.icloud" }
+        if isSyncing { return "arrow.clockwise.icloud" }
         if lastError != nil { return "exclamationmark.icloud" }
         if !readyToSync { return "icloud.slash" }
         return autoSync ? "checkmark.icloud.fill" : "checkmark.icloud"
@@ -63,8 +66,7 @@ final class SyncController: ObservableObject {
         if !sessionActive { return "Not logged in" }
         if !readyToSync { return "No project configured" }
         if let lastSync {
-            let formatter = RelativeDateTimeFormatter()
-            let when = formatter.localizedString(for: lastSync, relativeTo: Date())
+            let when = Self.relativeFormatter.localizedString(for: lastSync, relativeTo: Date())
             let summary = lastSummary.map { " (\($0))" } ?? ""
             return "Synced \(when)\(summary)"
         }
@@ -84,19 +86,16 @@ final class SyncController: ObservableObject {
 
         if let stored = try? KeychainStore.load(account: Self.provider) {
             sessionKey = stored.key
-            sessionActive = true
         }
 
-        var config = ClaudeConfig.load(projectFolder: nil)
-        if let path = config.string(forKey: "menubar_project_path") {
+        if let path = UserDefaults.standard.string(forKey: Self.projectPathDefaultsKey),
+           FileManager.default.fileExists(atPath: path) {
             let folder = URL(fileURLWithPath: path)
-            if FileManager.default.fileExists(atPath: path) {
-                projectFolder = folder
-                config = ClaudeConfig.load(projectFolder: folder)
-                selectedOrgId = config.string(forKey: "active_organization_id")
-                selectedProjectId = config.string(forKey: "active_project_id")
-                selectedProjectName = config.string(forKey: "active_project_name")
-            }
+            projectFolder = folder
+            let config = ClaudeConfig.load(projectFolder: folder)
+            selectedOrgId = config.string(forKey: "active_organization_id")
+            selectedProjectId = config.string(forKey: "active_project_id")
+            selectedProjectName = config.string(forKey: "active_project_name")
         }
         updateWatcher()
     }
@@ -117,10 +116,18 @@ final class SyncController: ObservableObject {
                 lastError = "No organizations with the required capabilities found."
                 return false
             }
-            let expiry = Date().addingTimeInterval(30 * 24 * 3600)
+            // Re-validating the same cookie (e.g. one stored via the CLI with
+            // a user-supplied expiry): keep that expiry rather than clobbering
+            // the shared Keychain payload with an invented one.
+            let expiry: Date
+            if let stored = KeychainStore.stored(account: Self.provider),
+               stored.key == key, stored.expiry > Date() {
+                expiry = stored.expiry
+            } else {
+                expiry = Date().addingTimeInterval(30 * 24 * 3600)
+            }
             try KeychainStore.save(account: Self.provider, sessionKey: key, expiry: expiry)
             sessionKey = key
-            sessionActive = true
             organizations = orgs
             lastError = nil
             return true
@@ -140,12 +147,23 @@ final class SyncController: ObservableObject {
     }
 
     func logout() {
+        clearSession()
+        lastError = nil
+    }
+
+    private func clearSession() {
         KeychainStore.delete(account: Self.provider)
         sessionKey = nil
-        sessionActive = false
         organizations = []
         projects = []
         autoSync = false
+    }
+
+    /// One place for 401s: drop the rejected key from memory AND the shared
+    /// Keychain item, so a relaunch or the CLI doesn't resurrect it.
+    private func handleUnauthorized() {
+        clearSession()
+        lastError = ClaudeError.unauthorized.errorDescription
     }
 
     // MARK: - Org / project / folder selection
@@ -155,6 +173,8 @@ final class SyncController: ObservableObject {
         do {
             organizations = try await client.organizations()
             lastError = nil
+        } catch ClaudeError.unauthorized {
+            handleUnauthorized()
         } catch {
             lastError = error.localizedDescription
         }
@@ -168,6 +188,8 @@ final class SyncController: ObservableObject {
         do {
             projects = try await client.projects(organizationId: orgId)
             lastError = nil
+        } catch ClaudeError.unauthorized {
+            handleUnauthorized()
         } catch {
             lastError = error.localizedDescription
         }
@@ -185,7 +207,8 @@ final class SyncController: ObservableObject {
         }
     }
 
-    /// Persists the selection in the same files the CLI uses.
+    /// Persists the selection in the same local config file the CLI uses;
+    /// the app-private "last project" pointer stays in UserDefaults.
     func saveProjectConfiguration() {
         guard let folder = projectFolder,
               let orgId = selectedOrgId,
@@ -200,11 +223,10 @@ final class SyncController: ObservableObject {
         config.setLocal(orgId, forKey: "active_organization_id")
         config.setLocal(projectId, forKey: "active_project_id")
         config.setLocal(projectName, forKey: "active_project_name")
-        config.setGlobal(folder.path, forKey: "menubar_project_path")
+        UserDefaults.standard.set(folder.path, forKey: Self.projectPathDefaultsKey)
 
         do {
             try config.saveLocal()
-            try config.saveGlobal()
             lastError = nil
         } catch {
             lastError = "Failed to save configuration: \(error.localizedDescription)"
@@ -225,7 +247,7 @@ final class SyncController: ObservableObject {
     }
 
     private func performSync() async {
-        guard readyToSync, let client = client(),
+        guard readyToSync, let sessionKey,
               let folder = projectFolder,
               let orgId = selectedOrgId,
               let projectId = selectedProjectId else { return }
@@ -234,21 +256,39 @@ final class SyncController: ObservableObject {
             return
         }
 
+        let config = ClaudeConfig.load(projectFolder: folder)
+        // Refuse configurations only the CLI implements: syncing anyway would
+        // fight the CLI over the remote doc set.
+        if config.compressionAlgorithm != "none" {
+            lastError = "This project uses compression_algorithm="
+                + "\(config.compressionAlgorithm), which only the CLI supports. "
+                + "Sync with `claudesync push` or set it to \"none\"."
+            return
+        }
+        if let category = config.defaultSyncCategory {
+            lastError = "This project sets default_sync_category=\(category), "
+                + "which only the CLI applies. Syncing here would push files "
+                + "outside the category."
+            return
+        }
+
         isSyncing = true
         lastError = nil
         progressText = "Scanning files…"
 
-        let config = ClaudeConfig.load(projectFolder: folder)
+        let client = ClaudeClient(baseURL: config.apiBaseURL, sessionKey: sessionKey)
         let engine = SyncEngine(client: client,
                                 organizationId: orgId,
                                 projectId: projectId,
                                 uploadDelay: config.uploadDelay,
                                 pruneRemoteFiles: config.pruneRemoteFiles)
         let maxFileSize = config.maxFileSize
+        let submodulePaths = Set(config.submodulePaths)
 
         do {
-            let localFiles = await Task.detached(priority: .utility) {
-                FileScanner.scan(root: folder, maxFileSize: maxFileSize)
+            let localFiles = try await Task.detached(priority: .utility) {
+                try FileScanner.scan(root: folder, maxFileSize: maxFileSize,
+                                     excludedRelativePaths: submodulePaths)
             }.value
 
             let summary = try await engine.sync(localFiles: localFiles, root: folder) { message in
@@ -259,9 +299,7 @@ final class SyncController: ObservableObject {
             lastSync = Date()
             lastSummary = summary.text
         } catch ClaudeError.unauthorized {
-            lastError = ClaudeError.unauthorized.errorDescription
-            sessionActive = false
-            sessionKey = nil
+            handleUnauthorized()
         } catch {
             lastError = error.localizedDescription
         }
@@ -271,7 +309,12 @@ final class SyncController: ObservableObject {
 
         if syncQueuedWhileBusy {
             syncQueuedWhileBusy = false
-            Task { await performSync() }
+            // Only chase the queued request when this pass succeeded — a
+            // persistent error plus watcher noise must not become a tight
+            // fail-retry loop.
+            if lastError == nil {
+                Task { await performSync() }
+            }
         }
     }
 
@@ -280,12 +323,50 @@ final class SyncController: ObservableObject {
     private func updateWatcher() {
         watcher?.stop()
         watcher = nil
-        guard autoSync, readyToSync, let folder = projectFolder else { return }
+        guard autoSync, readyToSync, let folder = projectFolder else {
+            debounceTask?.cancel()
+            syncQueuedWhileBusy = false
+            return
+        }
 
-        watcher = FSWatcher(path: folder.path) { [weak self] in
+        watcher = FSWatcher(path: folder.path,
+                            isRelevant: Self.makeRelevanceFilter(root: folder)) { [weak self] in
             Task { @MainActor in
                 self?.scheduleDebouncedSync()
             }
+        }
+    }
+
+    /// One definition of "project content", shared with the scanner: events
+    /// in excluded VCS/app directories, ignored paths (builds, node_modules,
+    /// virtualenvs…), or submodules must not wake the sync.
+    nonisolated private static func makeRelevanceFilter(root: URL) -> @Sendable (String) -> Bool {
+        let rootPath = root.standardizedFileURL.path
+        let gitignore = IgnoreMatcher(contentsOf: root.appendingPathComponent(".gitignore"))
+        let claudeignore = IgnoreMatcher(contentsOf: root.appendingPathComponent(".claudeignore"))
+        let excludedDirs = FileScanner.excludedDirs
+        let submodules = ClaudeConfig.load(projectFolder: root).submodulePaths
+
+        return { path in
+            guard path.hasPrefix(rootPath + "/") else { return true }
+            let relPath = String(path.dropFirst(rootPath.count + 1))
+            let components = relPath.split(separator: "/").map(String.init)
+            if components.contains(where: excludedDirs.contains) { return false }
+            if submodules.contains(where: { relPath == $0 || relPath.hasPrefix($0 + "/") }) {
+                return false
+            }
+            guard gitignore != nil || claudeignore != nil else { return true }
+            // Check the path and every ancestor directory against the ignore
+            // rules; FSEvents reports the leaf, but a dir-only rule like
+            // "build/" is what actually excludes its contents.
+            var prefix = ""
+            for (index, component) in components.enumerated() {
+                prefix = prefix.isEmpty ? component : prefix + "/" + component
+                let isDirectory = index < components.count - 1
+                if gitignore?.isIgnored(prefix, isDirectory: isDirectory) == true { return false }
+                if claudeignore?.isIgnored(prefix, isDirectory: isDirectory) == true { return false }
+            }
+            return true
         }
     }
 

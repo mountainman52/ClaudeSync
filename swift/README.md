@@ -16,15 +16,22 @@ Keychain — no Electron, no daemon, ~1,400 lines of Swift.
   auto-sync armed); the menu shows the last sync time and result.
 - **Sync Now** — the CLI's push algorithm: upload new files, delete-and-
   reupload changed files (MD5 comparison), prune remote files that no longer
-  exist locally (honors `prune_remote_files`).
+  exist locally (honors `prune_remote_files`). Each request is retried on
+  claude.ai's transient 403s, mirroring the CLI's `retry_on_403`.
 - **Auto-sync** — FSEvents watches the project folder and pushes ~2 seconds
-  after changes settle. Events from `.git`, `.claudesync`, and `claude_chats`
-  are ignored so the app doesn't react to its own writes.
+  after changes settle. Events in excluded VCS/app directories, gitignored
+  paths (builds, `node_modules`, virtualenvs…), and submodules don't wake
+  the sync.
 - **Same filters as the CLI** — `.gitignore` + `.claudeignore` (common
-  gitignore syntax: `*`, `?`, `**`, anchors, `!` negation), excluded VCS
-  directories, `max_file_size`, editor backups, binary detection.
+  gitignore syntax: `*`, `?`, `**`, `[...]` classes, anchors, `!` negation),
+  excluded VCS directories, registered submodule paths, `max_file_size`,
+  editor backups, binary detection.
+- **Safety** — an unreadable project folder aborts the sync instead of being
+  mistaken for an empty project, and pruning refuses to delete *every*
+  remote file when the local scan comes back empty.
 - **Login** — paste the `sessionKey` cookie (or one-click "Log In from
-  Clipboard"); validated against the API before storing.
+  Clipboard"); validated against the API before storing. A re-login with the
+  same cookie keeps the expiry you gave the CLI.
 - **Launch at login** via `SMAppService` (requires the app bundle).
 
 ## Interop with the CLI
@@ -40,8 +47,12 @@ Python tool):
   binary touches the item — "Always Allow".
 
 Deliberately **not** in the app (use the CLI): chat/artifact pull, Claude Code
-session management, compression modes, file categories, submodules, project
-creation/archiving.
+session management, compression modes, file categories, project
+creation/archiving. Submodule paths are *excluded* from the app's sync (like
+the CLI's parent-project push); syncing submodules to their own projects
+remains CLI-only. If a project sets `compression_algorithm` or
+`default_sync_category`, the app refuses to sync it rather than fight the CLI
+over the remote doc set.
 
 ## Building
 

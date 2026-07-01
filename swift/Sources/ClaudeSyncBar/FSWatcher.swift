@@ -1,35 +1,53 @@
 import CoreServices
 import Foundation
 
-/// Thin FSEvents wrapper: reports file-system changes under a directory,
-/// excluding paths the sync itself writes to (.claudesync, claude_chats, .git).
+/// Thin FSEvents wrapper: reports file-system changes under a directory.
+/// Which paths count is decided by the injected `isRelevant` predicate so the
+/// watcher and the file scanner share one definition of project content.
 final class FSWatcher {
+    /// Holds the callback state. The FSEvents stream retains it through the
+    /// context's retain/release callbacks, so an in-flight event on the
+    /// watcher queue can never see a deallocated object even if the watcher
+    /// itself is torn down concurrently from the main thread.
+    private final class Sink {
+        let isRelevant: @Sendable (String) -> Bool
+        let onChange: @Sendable () -> Void
+
+        init(isRelevant: @escaping @Sendable (String) -> Bool,
+             onChange: @escaping @Sendable () -> Void) {
+            self.isRelevant = isRelevant
+            self.onChange = onChange
+        }
+    }
+
     private var stream: FSEventStreamRef?
     private let queue = DispatchQueue(label: "claudesync.fswatcher")
-    private let onChange: () -> Void
 
-    init?(path: String, latency: TimeInterval = 1.0, onChange: @escaping () -> Void) {
-        self.onChange = onChange
+    init?(path: String, latency: TimeInterval = 1.0,
+          isRelevant: @escaping @Sendable (String) -> Bool,
+          onChange: @escaping @Sendable () -> Void) {
+        let sink = Sink(isRelevant: isRelevant, onChange: onChange)
 
         var context = FSEventStreamContext(
             version: 0,
-            info: Unmanaged.passUnretained(self).toOpaque(),
-            retain: nil,
-            release: nil,
+            info: Unmanaged.passUnretained(sink).toOpaque(),
+            retain: { info in
+                guard let info else { return nil }
+                return UnsafeRawPointer(Unmanaged<Sink>.fromOpaque(info).retain().toOpaque())
+            },
+            release: { info in
+                guard let info else { return }
+                Unmanaged<Sink>.fromOpaque(info).release()
+            },
             copyDescription: nil
         )
 
         let callback: FSEventStreamCallback = { _, info, numEvents, eventPaths, _, _ in
             guard let info else { return }
-            let watcher = Unmanaged<FSWatcher>.fromOpaque(info).takeUnretainedValue()
+            let sink = Unmanaged<Sink>.fromOpaque(info).takeUnretainedValue()
             let paths = unsafeBitCast(eventPaths, to: NSArray.self) as? [String] ?? []
-            let relevant = paths.prefix(Int(numEvents)).contains { path in
-                !path.contains("/.claudesync/")
-                    && !path.contains("/.git/")
-                    && !path.contains("/claude_chats/")
-            }
-            if relevant {
-                watcher.onChange()
+            if paths.prefix(Int(numEvents)).contains(where: sink.isRelevant) {
+                sink.onChange()
             }
         }
 

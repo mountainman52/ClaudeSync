@@ -32,9 +32,30 @@ struct ClaudeConfig {
         return ClaudeConfig(global: global, projectFolder: projectFolder, local: local)
     }
 
-    /// Local value first, then global, then built-in default.
+    /// Local value first, then global — but matching the CLI's Python-derived
+    /// merge, a *falsy* local value (false, 0, "", null, [], {}) falls
+    /// through to the global one.
     func value(forKey key: String) -> Any? {
-        local[key] ?? global[key]
+        if let localValue = local[key], Self.isTruthy(localValue) { return localValue }
+        return global[key]
+    }
+
+    static func isTruthy(_ value: Any) -> Bool {
+        switch value {
+        case is NSNull:
+            return false
+        case let number as NSNumber:
+            // Covers Bool (false bridges to 0) and all numeric zeros.
+            return number.doubleValue != 0
+        case let string as String:
+            return !string.isEmpty
+        case let array as [Any]:
+            return !array.isEmpty
+        case let dictionary as [String: Any]:
+            return !dictionary.isEmpty
+        default:
+            return true
+        }
     }
 
     func string(forKey key: String) -> String? {
@@ -42,7 +63,11 @@ struct ClaudeConfig {
     }
 
     var apiBaseURL: URL {
-        URL(string: string(forKey: "claude_api_url") ?? "https://claude.ai/api")!
+        let fallback = URL(string: "https://claude.ai/api")!
+        guard let raw = string(forKey: "claude_api_url"), let url = URL(string: raw) else {
+            return fallback
+        }
+        return url
     }
 
     var maxFileSize: Int {
@@ -57,6 +82,21 @@ struct ClaudeConfig {
         (value(forKey: "prune_remote_files") as? Bool) ?? true
     }
 
+    var compressionAlgorithm: String {
+        string(forKey: "compression_algorithm") ?? "none"
+    }
+
+    var defaultSyncCategory: String? {
+        string(forKey: "default_sync_category")
+    }
+
+    /// Relative paths of registered submodules; the CLI syncs these to their
+    /// own Claude projects and excludes them from the parent's walk.
+    var submodulePaths: [String] {
+        guard let list = value(forKey: "submodules") as? [[String: Any]] else { return [] }
+        return list.compactMap { $0["relative_path"] as? String }
+    }
+
     mutating func setGlobal(_ value: Any?, forKey key: String) {
         if let value { global[key] = value } else { global.removeValue(forKey: key) }
     }
@@ -65,21 +105,20 @@ struct ClaudeConfig {
         if let value { local[key] = value } else { local.removeValue(forKey: key) }
     }
 
-    func saveGlobal() throws {
-        try FileManager.default.createDirectory(at: Self.globalDir,
+    private func write(_ object: [String: Any], to url: URL) throws {
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(),
                                                 withIntermediateDirectories: true)
-        let data = try JSONSerialization.data(withJSONObject: global,
+        let data = try JSONSerialization.data(withJSONObject: object,
                                               options: [.prettyPrinted, .sortedKeys])
-        try data.write(to: Self.globalFile)
+        try data.write(to: url)
+    }
+
+    func saveGlobal() throws {
+        try write(global, to: Self.globalFile)
     }
 
     func saveLocal() throws {
         guard let folder = projectFolder else { return }
-        let file = Self.localFile(in: folder)
-        try FileManager.default.createDirectory(at: file.deletingLastPathComponent(),
-                                                withIntermediateDirectories: true)
-        let data = try JSONSerialization.data(withJSONObject: local,
-                                              options: [.prettyPrinted, .sortedKeys])
-        try data.write(to: file)
+        try write(local, to: Self.localFile(in: folder))
     }
 }
